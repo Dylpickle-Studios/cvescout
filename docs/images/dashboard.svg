@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
   <title id="title">CVE Scout dashboard, example data</title>
   <desc id="desc">Illustrative mock of the CVE Scout inventory page: rescan buttons, summary counters, a device table with status badges, and recent scan jobs.</desc>
-  <g font-family="system-ui,sans-serif">
+  <g font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
     <rect width="1200" height="700" fill="#10151c"/>
     <rect width="1200" height="64" fill="#0b1016"/>
     <text x="40" y="41" fill="#ffffff" font-size="22" font-weight="700">CVE Scout</text>
@@ -15,15 +15,15 @@
     <text x="40" y="112" fill="#e8eef5" font-size="28" font-weight="700">Network inventory</text>
     <text x="40" y="138" fill="#9eacbb" font-size="13">Allowed: 192.168.1.0/24</text>
     <rect x="580" y="122" width="127" height="34" rx="5" fill="#237ac1"/>
-    <text x="643.5" y="139" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="central">Rescan network</text>
+    <text x="643.5" y="143.32" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle">Rescan network</text>
     <rect x="717" y="122" width="127" height="34" rx="5" fill="#237ac1"/>
-    <text x="780.5" y="139" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="central">Rescan devices</text>
+    <text x="780.5" y="143.32" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle">Rescan devices</text>
     <rect x="854" y="122" width="112" height="34" rx="5" fill="#237ac1"/>
-    <text x="910" y="139" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="central">Rescan ports</text>
+    <text x="910" y="143.32" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle">Rescan ports</text>
     <rect x="976" y="122" width="184" height="34" rx="5" fill="#237ac1"/>
-    <text x="1068" y="139" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="central">Rescan vulnerabilities</text>
+    <text x="1068" y="143.32" fill="#e8eef5" font-size="12" font-weight="700" text-anchor="middle">Rescan vulnerabilities</text>
     <rect x="1035" y="86" width="125" height="26" rx="5" fill="#2c3947"/>
-    <text x="1097.5" y="99" fill="#e8eef5" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">EXAMPLE DATA</text>
+    <text x="1097.5" y="102.96" fill="#e8eef5" font-size="11" font-weight="700" text-anchor="middle">EXAMPLE DATA</text>
     <rect x="40" y="170" width="150" height="84" rx="5" fill="#18212b" stroke="#2c3947"/>
     <text x="56" y="205" fill="#e8eef5" font-size="30" font-weight="700">6</text>
     <text x="56" y="231" fill="#9eacbb" font-size="12">Devices</text>
@@ -58,25 +58,25 @@
     <text x="220" y="386" fill="#e8eef5" font-size="13">router.local</text>
     <text x="390" y="386" fill="#e8eef5" font-size="13">OpenWrt</text>
     <rect x="560" y="370" width="33" height="22" rx="11" fill="#174e32"/>
-    <text x="576.5" y="381" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">up</text>
+    <text x="576.5" y="384.96" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle">up</text>
     <text x="690" y="386" fill="#e8eef5" font-size="13">4</text>
     <text x="790" y="386" fill="#e8eef5" font-size="13">1</text>
     <text x="900" y="386" fill="#e8eef5" font-size="13">2026-10-29 14:30 UTC</text>
-    <path d="M40 404H1160" stroke="#2c3947"/>
+    <path d="M40 404H1160" stroke="#2c3947" fill="none"/>
     <text x="58" y="432" fill="#65b5ff" font-size="13">192.168.1.12</text>
     <text x="220" y="432" fill="#e8eef5" font-size="13">pi-zero.local</text>
     <text x="390" y="432" fill="#e8eef5" font-size="13">Raspberry Pi</text>
     <rect x="560" y="416" width="33" height="22" rx="11" fill="#174e32"/>
-    <text x="576.5" y="427" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">up</text>
+    <text x="576.5" y="430.96" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle">up</text>
     <text x="690" y="432" fill="#e8eef5" font-size="13">3</text>
     <text x="790" y="432" fill="#e8eef5" font-size="13">0</text>
     <text x="900" y="432" fill="#e8eef5" font-size="13">2026-10-29 14:30 UTC</text>
-    <path d="M40 450H1160" stroke="#2c3947"/>
+    <path d="M40 450H1160" stroke="#2c3947" fill="none"/>
     <text x="58" y="478" fill="#65b5ff" font-size="13">192.168.1.20</text>
     <text x="220" y="478" fill="#e8eef5" font-size="13">nas.local</text>
     <text x="390" y="478" fill="#e8eef5" font-size="13">Synology</text>
     <rect x="560" y="462" width="33" height="22" rx="11" fill="#174e32"/>
-    <text x="576.5" y="473" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">up</text>
+    <text x="576.5" y="476.96" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle">up</text>
     <text x="690" y="478" fill="#e8eef5" font-size="13">7</text>
     <text x="790" y="478" fill="#e8eef5" font-size="13">2</text>
     <text x="900" y="478" fill="#e8eef5" font-size="13">2026-10-29 14:29 UTC</text>
@@ -91,14 +91,14 @@
     <text x="120" y="618" fill="#e8eef5" font-size="13">vulnerabilities</text>
     <text x="270" y="618" fill="#e8eef5" font-size="13">all</text>
     <rect x="410" y="602" width="79" height="22" rx="11" fill="#174e32"/>
-    <text x="449.5" y="613" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">completed</text>
+    <text x="449.5" y="616.96" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle">completed</text>
     <text x="540" y="618" fill="#e8eef5" font-size="13">Profiled 14 ports; matched 3 CVEs</text>
-    <path d="M40 636H1160" stroke="#2c3947"/>
+    <path d="M40 636H1160" stroke="#2c3947" fill="none"/>
     <text x="58" y="664" fill="#e8eef5" font-size="13">41</text>
     <text x="120" y="664" fill="#e8eef5" font-size="13">ports</text>
     <text x="270" y="664" fill="#e8eef5" font-size="13">192.168.1.20</text>
     <rect x="410" y="648" width="79" height="22" rx="11" fill="#174e32"/>
-    <text x="449.5" y="659" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle" dominant-baseline="central">completed</text>
+    <text x="449.5" y="662.96" fill="#a9f3c8" font-size="11" font-weight="700" text-anchor="middle">completed</text>
     <text x="540" y="664" fill="#e8eef5" font-size="13">Scanned 1 device; found 7 open ports</text>
   </g>
 </svg>

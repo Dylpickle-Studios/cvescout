@@ -1,0 +1,29 @@
+fix(ui): clamp pagination, tidy download names, honour login deep links
+
+Pages, exports, and login all had rough edges that showed up as soon as the
+lists got long or a link was followed while signed out.
+
+- Paginate: out-of-range ?page= values rendered an empty table under a
+  "Page 99 of 2" heading and hid the Previous/Next controls. Added one
+  paginate(total) helper that clamps the page and returns page, pages, offset;
+  reports, devices, and logs now use it.
+- Downloads: filenames were built by appending a suffix, producing
+  "cvescout-2026-10-29.192.168.2.30.csv". download() now takes a full name,
+  date-prefixes it, and strips anything outside [A-Za-z0-9._-].
+- Login: login_required already passed ?next= but the route ignored it, so
+  every deep link landed on the dashboard. The target is now carried through
+  the form and honoured, validated by safe_next() which only accepts
+  same-site absolute paths (no "//host" or "https://...").
+- Domain page printed Python booleans for reachability ("False"); now yes/no.
+- Table headers carry scope="col", and the active nav item is marked with
+  aria-current="page" plus a highlight.
+
+CI:
+- CodeQL failed with "Resource not accessible by integration" because the
+  analyze step reads the workflow run for telemetry. Added actions: read and
+  packages: read to the workflow permissions alongside the existing
+  contents: read and security-events: write.
+
+Seven regression tests cover clamping, filenames, boolean rendering, the
+login round trip, offsite next rejection, header scopes, and nav state.
+141 tests pass, ruff clean, wheel and sdist build, workflows parse.
