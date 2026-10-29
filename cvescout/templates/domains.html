@@ -23,7 +23,7 @@
 <section data-refresh="{{ 'true' if active_jobs else 'false' }}">
   <h2>Configured hostnames</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>Hostname</th><th>Public edge</th><th>Status</th><th>Findings</th><th>High</th><th>Medium</th><th>Last scan</th><th>Actions</th></tr></thead>
+    <thead><tr><th scope="col">Hostname</th><th scope="col">Public edge</th><th scope="col">Status</th><th scope="col">Findings</th><th scope="col">High</th><th scope="col">Medium</th><th scope="col">Last scan</th><th scope="col">Actions</th></tr></thead>
     <tbody>
     {% for domain in domains %}
       <tr>

@@ -11,7 +11,7 @@ Designed for a Raspberry Pi Zero: server-rendered HTML, SQLite, one background w
 
 > Scan only networks, devices, and public hostnames you own or have explicit permission to assess.
 
-![CVE Scout dashboard](docs/images/dashboard.svg)
+![Illustrative mock of the CVE Scout dashboard](docs/images/dashboard.svg)
 
 ## Features
 

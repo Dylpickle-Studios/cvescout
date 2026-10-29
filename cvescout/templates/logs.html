@@ -13,7 +13,7 @@
   <span class="muted">{{ total }} event{{ '' if total == 1 else 's' }}</span>
 </form>
 <div class="table-wrap"><table>
-<thead><tr><th>Time</th><th>Level</th><th>User</th><th>Action</th><th>Target</th><th>Message</th></tr></thead>
+<thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">User</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Message</th></tr></thead>
 <tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td><span class="badge {{ event.level }}">{{ event.level }}</span></td><td>{{ event.username or 'system' }}</td><td>{{ event.action }}</td><td>{{ event.target or '—' }}</td><td>{{ event.message }}</td></tr>{% else %}<tr><td colspan="6">No events.</td></tr>{% endfor %}</tbody>
 </table></div>
 {% include 'pagination.html' %}

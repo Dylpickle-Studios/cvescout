@@ -8,7 +8,7 @@ from flask import jsonify, render_template, request
 from .. import exporters
 from ..db import get_db, now
 from ..version import __version__
-from . import PAGE_SIZE, _page, bp, download
+from . import PAGE_SIZE, bp, download, paginate
 
 VULN_SELECT = (
     "SELECT v.*,d.id AS device_id,d.address,d.hostname,p.port,p.protocol,p.service,p.product,p.version,"
@@ -22,9 +22,9 @@ VULN_SELECT = (
 
 @bp.get("/reports")
 def reports():
-    page = _page()
-    severity, vulnerabilities, domain_findings, checks, domain_checks = _report_rows(PAGE_SIZE, (page - 1) * PAGE_SIZE)
     total = get_db().execute("SELECT COUNT(*) FROM vulnerabilities WHERE resolved_at IS NULL").fetchone()[0]
+    page, pages, offset = paginate(total)
+    severity, vulnerabilities, domain_findings, checks, domain_checks = _report_rows(PAGE_SIZE, offset)
     return render_template(
         "reports.html",
         severity=severity,
@@ -33,7 +33,7 @@ def reports():
         domain_findings=domain_findings,
         domain_checks=domain_checks,
         page=page,
-        pages=max(1, -(-total // PAGE_SIZE)),
+        pages=pages,
         total=total,
         page_size=PAGE_SIZE,
     )
@@ -110,7 +110,7 @@ def _report_findings() -> list[dict]:
 
 @bp.get("/reports.csv")
 def reports_csv():
-    return download(exporters.to_csv(_report_findings()), "text/csv", "csv")
+    return download(exporters.to_csv(_report_findings()), "text/csv", "reports.csv")
 
 
 @bp.get("/reports.json")
@@ -121,25 +121,25 @@ def reports_json():
 @bp.get("/reports.sarif")
 def reports_sarif():
     document = exporters.to_sarif(_report_findings(), __version__, now())
-    return download(exporters.dumps(document), "application/sarif+json", "sarif")
+    return download(exporters.dumps(document), "application/sarif+json", "reports.sarif")
 
 @bp.get("/logs")
 def logs():
     db = get_db()
-    page = _page()
     level = request.args.get("level", "").strip().lower()
     where, params = ("WHERE level=?", (level,)) if level else ("", ())
+    total = db.execute(f"SELECT COUNT(*) FROM events {where}", params).fetchone()[0]
+    page, pages, offset = paginate(total)
     events = db.execute(
         f"SELECT * FROM events {where} ORDER BY id DESC LIMIT ? OFFSET ?",
-        (*params, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        (*params, PAGE_SIZE, offset),
     ).fetchall()
-    total = db.execute(f"SELECT COUNT(*) FROM events {where}", params).fetchone()[0]
     levels = [row[0] for row in db.execute("SELECT DISTINCT level FROM events ORDER BY level")]
     return render_template(
         "logs.html",
         events=events,
         page=page,
-        pages=max(1, -(-total // PAGE_SIZE)),
+        pages=pages,
         total=total,
         level=level,
         levels=levels,

@@ -23,7 +23,7 @@
 <section>
   <h2>Devices</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>Address</th><th>Name</th><th>Vendor</th><th>Status</th><th>Ports</th><th>CVEs</th><th>Last seen</th></tr></thead>
+    <thead><tr><th scope="col">Address</th><th scope="col">Name</th><th scope="col">Vendor</th><th scope="col">Status</th><th scope="col">Ports</th><th scope="col">CVEs</th><th scope="col">Last seen</th></tr></thead>
     <tbody>
     {% for device in devices %}
       <tr>
@@ -39,14 +39,14 @@
 <section>
   <h2>Recent jobs</h2>
   <div class="table-wrap"><table data-refresh="{{ 'true' if active_jobs else 'false' }}">
-    <thead><tr><th>ID</th><th>Task</th><th>Target</th><th>Status</th><th>Message</th><th>Started</th></tr></thead>
+    <thead><tr><th scope="col">ID</th><th scope="col">Task</th><th scope="col">Target</th><th scope="col">Status</th><th scope="col">Message</th><th scope="col">Started</th></tr></thead>
     <tbody>{% for job in jobs %}<tr><td>{{ job.id }}</td><td>{{ job.kind }}</td><td>{{ job.target or 'all' }}</td><td><span class="badge {{ job.status }}">{{ job.status }}</span></td><td>{{ job.message or '—' }}</td><td>{{ job.started_at or job.created_at }}</td></tr>{% else %}<tr><td colspan="6">No jobs yet.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>
 <section>
   <h2>Recent log</h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>Time</th><th>Level</th><th>Action</th><th>Target</th><th>Message</th></tr></thead>
+    <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Message</th></tr></thead>
     <tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.level }}</td><td>{{ event.action }}</td><td>{{ event.target or '—' }}</td><td>{{ event.message }}</td></tr>{% else %}<tr><td colspan="5">No events yet.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>

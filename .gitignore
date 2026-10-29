@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.pi/
 instance/*
 !instance/.gitkeep
 *.egg-info/

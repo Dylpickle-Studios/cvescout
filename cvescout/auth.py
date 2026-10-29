@@ -73,6 +73,13 @@ def verify_csrf() -> None:
         abort(400, "Invalid CSRF token")
 
 
+def safe_next(value: str | None) -> str | None:
+    """Only allow same-site redirects, never an absolute URL."""
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return None
+    return value
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(**kwargs):
@@ -101,13 +108,14 @@ def login():
             flash("Invalid username or password", "error")
         else:
             _clear_failures(key)
+            target = safe_next(request.form.get("next") or request.args.get("next"))
             session.clear()
             session.permanent = True
             session["user"] = username
             csrf_token()
             log_event("info", "login", "Login successful", username=username)
-            return redirect(url_for("main.dashboard"))
-    return render_template("login.html")
+            return redirect(target or url_for("main.dashboard"))
+    return render_template("login.html", next=safe_next(request.args.get("next")) or "")
 
 
 @bp.post("/logout")

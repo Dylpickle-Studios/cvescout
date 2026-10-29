@@ -13,12 +13,11 @@
     <a class="brand" href="{{ url_for('main.dashboard') }}">CVE Scout</a>
     {% if current_user %}
       <nav aria-label="Main navigation">
-        <a href="{{ url_for('main.dashboard') }}">Inventory</a>
-        <a href="{{ url_for('main.domains') }}">Public domains</a>
-        <a href="{{ url_for('main.reports') }}">Reports</a>
-        <a href="{{ url_for('main.logs') }}">Logs</a>
-        <a href="{{ url_for('main.system') }}">System</a>
-        <a href="{{ url_for('main.settings') }}">Settings</a>
+        {% for endpoint, label in [('main.dashboard', 'Inventory'), ('main.domains', 'Public domains'),
+                                   ('main.reports', 'Reports'), ('main.logs', 'Logs'),
+                                   ('main.system', 'System'), ('main.settings', 'Settings')] %}
+          <a href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
         <form method="post" action="{{ url_for('auth.logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="link" type="submit">Log out {{ current_user }}</button>

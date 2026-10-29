@@ -21,7 +21,7 @@ from ..jobs import (
     submit_check,
     submit_scan,
 )
-from . import PAGE_SIZE, _active_jobs, _page, bp, download
+from . import PAGE_SIZE, _active_jobs, bp, download, paginate
 
 
 @bp.get("/")
@@ -131,15 +131,15 @@ def device(device_id: int):
         "FROM vulnerabilities v JOIN ports p ON p.id=v.port_id LEFT JOIN exploit_intel i ON i.cve_id=v.cve_id "
         "WHERE p.device_id=? AND v.resolved_at IS NULL"
     )
-    page = _page()
     total = db.execute(f"SELECT COUNT(*) {where}", (device_id,)).fetchone()[0]
+    page, pages, offset = paginate(total)
     vulnerabilities = db.execute(
         "SELECT v.*,p.port,p.protocol,p.service,p.product,p.version,"
         "COALESCE(i.kev,0) AS kev,i.epss AS epss,"
         "(SELECT result FROM checks c WHERE c.vulnerability_id=v.id ORDER BY c.id DESC LIMIT 1) AS check_result,"
         "(SELECT details FROM checks c WHERE c.vulnerability_id=v.id ORDER BY c.id DESC LIMIT 1) AS check_details "
         f"{where} {order} LIMIT ? OFFSET ?",
-        (device_id, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        (device_id, PAGE_SIZE, offset),
     ).fetchall()
     return render_template(
         "device.html",
@@ -149,7 +149,7 @@ def device(device_id: int):
         safe_checks=SAFE_NSE_CHECKS,
         active_jobs=_active_jobs(),
         page=page,
-        pages=max(1, -(-total // PAGE_SIZE)),
+        pages=pages,
         total=total,
     )
 

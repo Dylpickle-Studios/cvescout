@@ -10,15 +10,15 @@
 <tbody>{% for v in vulnerabilities %}<tr><td><a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.cve_id }}</a></td><td>{{ v.severity }} {{ v.score if v.score is not none else '' }}</td><td>{% if v.kev %}<span class="badge kev">KEV</span>{% endif %} EPSS {{ '%.1f%%'|format(v.epss * 100) if v.epss is not none else 'n/a' }}</td><td><span class="badge {{ 'exact' if v.match_type == 'exact' else 'product' if v.match_type == 'version' else 'review' }}">{{ {'exact': 'version', 'version': 'range'}.get(v.match_type, 'product?') }}</span></td><td><a href="{{ url_for('main.device', device_id=v.device_id) }}">{{ v.hostname or v.address }}</a></td><td>{{ v.port }}/{{ v.protocol }}</td><td>{{ v.product or v.service }} {{ v.version }}</td><td>{{ v.check_result or 'not checked' }}</td><td>{{ v.last_seen }}</td></tr>{% else %}<tr><td colspan="9">No CVE matches.</td></tr>{% endfor %}</tbody>
 </table></div>{% include 'pagination.html' %}</section>
 <section><h2>Public domain findings</h2><div class="table-wrap"><table>
-<thead><tr><th>Severity</th><th>Hostname</th><th>Provider</th><th>Category</th><th>Finding</th><th>Seen</th></tr></thead>
+<thead><tr><th scope="col">Severity</th><th scope="col">Hostname</th><th scope="col">Provider</th><th scope="col">Category</th><th scope="col">Finding</th><th scope="col">Seen</th></tr></thead>
 <tbody>{% for f in domain_findings %}<tr><td><span class="badge severity-{{ f.severity }}">{{ f.severity }}</span></td><td><a href="{{ url_for('main.domain', domain_id=f.domain_id) }}">{{ f.name }}</a></td><td>{{ f.provider }}</td><td>{{ f.category }}</td><td>{{ f.title }}</td><td>{{ f.last_seen }}</td></tr>{% else %}<tr><td colspan="6">No public domain findings.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 <section><h2>Provider verification history</h2><div class="table-wrap"><table>
-<thead><tr><th>Time</th><th>Hostname</th><th>Check</th><th>User</th><th>Status</th><th>Result</th><th>Summary</th></tr></thead>
+<thead><tr><th scope="col">Time</th><th scope="col">Hostname</th><th scope="col">Check</th><th scope="col">User</th><th scope="col">Status</th><th scope="col">Result</th><th scope="col">Summary</th></tr></thead>
 <tbody>{% for c in domain_checks %}<tr><td>{{ c.finished_at or c.started_at }}</td><td><a href="{{ url_for('main.domain', domain_id=c.domain_id) }}">{{ c.name }}</a></td><td>{{ c.kind }}</td><td>{{ c.username }}</td><td>{{ c.status }}</td><td>{{ c.result or '—' }}</td><td>{{ c.summary or '—' }}</td></tr>{% else %}<tr><td colspan="7">No provider checks run.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 <section><h2>CVE verification history</h2><div class="table-wrap"><table>
-<thead><tr><th>Time</th><th>CVE</th><th>Target</th><th>User</th><th>Status</th><th>Result</th></tr></thead>
+<thead><tr><th scope="col">Time</th><th scope="col">CVE</th><th scope="col">Target</th><th scope="col">User</th><th scope="col">Status</th><th scope="col">Result</th></tr></thead>
 <tbody>{% for c in checks %}<tr><td>{{ c.finished_at or c.started_at }}</td><td>{{ c.cve_id }}</td><td>{{ c.address }}:{{ c.port }}</td><td>{{ c.username }}</td><td>{{ c.status }}</td><td>{{ c.result or '—' }}</td></tr>{% else %}<tr><td colspan="6">No checks run.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 {% endblock %}

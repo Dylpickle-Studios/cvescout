@@ -116,6 +116,78 @@ class WebPanelTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertIn("Page 2 of 2", second.get_data(as_text=True))
 
+
+    def test_out_of_range_pages_clamp_to_the_last_page(self):
+        self._seed_findings(60)
+        body = self.client.get("/reports?page=99").get_data(as_text=True)
+        self.assertIn("Page 2 of 2", body)
+        self.assertIn("CVE-2024-0059", body)
+
+    def test_exports_use_a_readable_filename(self):
+        device_id = self._seed_findings(1)
+        self.assertEqual(
+            self.client.get("/reports.csv").headers["Content-Disposition"],
+            "attachment; filename=cvescout-"
+            + __import__("datetime").date.today().isoformat()
+            + "-reports.csv",
+        )
+        self.assertIn("-192.168.2.20.csv", self.client.get(f"/devices/{device_id}.csv").headers["Content-Disposition"])
+
+    def test_domain_page_renders_readable_booleans(self):
+        with self.app.app_context():
+            domain_id = get_db().execute(
+                "INSERT INTO domains(name,status,created_at) VALUES('never.example','never',?)", (now(),)
+            ).lastrowid
+            get_db().commit()
+        body = self.client.get(f"/domains/{domain_id}").get_data(as_text=True)
+        self.assertNotIn(">False<", body)
+        self.assertNotIn(">True<", body)
+        self.assertIn(">no<", body)
+
+    def test_login_returns_to_the_requested_page(self):
+        from werkzeug.security import generate_password_hash
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "INSERT INTO users(username,password_hash,created_at) VALUES('admin',?,?)",
+                (generate_password_hash("pw"), now()),
+            )
+            db.commit()
+        client = self.app.test_client()
+        import re as _re
+
+        page = client.get("/login?next=/reports").get_data(as_text=True)
+        token = _re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        response = client.post(
+            "/login",
+            data={"csrf_token": token, "username": "admin", "password": "pw", "next": "/reports"},
+        )
+        self.assertEqual(response.headers["Location"], "/reports")
+
+    def test_login_ignores_offsite_next(self):
+        from cvescout.auth import safe_next
+
+        self.assertIsNone(safe_next("https://evil.example/x"))
+        self.assertIsNone(safe_next("//evil.example"))
+        self.assertIsNone(safe_next(""))
+        self.assertEqual(safe_next("/logs?level=error"), "/logs?level=error")
+
+    def test_every_page_marks_table_headers(self):
+        with self.app.app_context():
+            domain_id = get_db().execute(
+                "INSERT INTO domains(name,status,created_at) VALUES('never.example','never',?)", (now(),)
+            ).lastrowid
+            get_db().commit()
+        for route in ("/", "/reports", "/logs", "/system", "/domains", f"/domains/{domain_id}"):
+            body = self.client.get(route).get_data(as_text=True)
+            if "<th" in body:
+                self.assertIn('scope="', body, route)
+
+    def test_navigation_marks_the_current_page(self):
+        self.assertIn('aria-current="page"', self.client.get("/").get_data(as_text=True))
+        self.assertIn('aria-current="page"', self.client.get("/system").get_data(as_text=True))
+
     def test_pagination_template_omits_links_on_a_single_page(self):
         self._seed_findings(2)
         html = self.client.get("/reports").get_data(as_text=True)

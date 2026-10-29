@@ -49,7 +49,7 @@
         <p><strong>Origin {{ loop.index }}:</strong> HTTPS {{ 'reachable' if candidate.https.reachable else 'no response' }}{% if candidate.https.status %}, HTTP {{ candidate.https.status }}{% endif %}{% if candidate.https.certificate_trusted is defined and candidate.https.certificate_trusted is not none %}, certificate {{ 'trusted' if candidate.https.certificate_trusted else 'not publicly trusted' }}{% endif %}{% if candidate.https.matches_edge_body %}, matches edge body{% endif %} · HTTP port 80: {{ 'reachable' if candidate.http.reachable else 'no response' }}{% if candidate.http.status %} (HTTP {{ candidate.http.status }}){% endif %}</p>
         {% endfor %}
       {% elif check.kind == 'cloudflare' and check.details.checks %}
-        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Status</th><th>Value</th><th>Recommendation</th></tr></thead><tbody>
+        <div class="table-wrap"><table><thead><tr><th scope="col">Control</th><th scope="col">Status</th><th scope="col">Value</th><th scope="col">Recommendation</th></tr></thead><tbody>
           {% for item in check.details.checks %}<tr><td>{{ item.title }}</td><td><span class="badge {{ item.status }}">{{ item.status }}</span></td><td>{{ item.value }}</td><td>{{ item.recommendation or '—' }}</td></tr>{% endfor %}
         </tbody></table></div>
       {% endif %}
@@ -76,23 +76,23 @@
 <section>
   <h2>Technical details</h2>
   <details open><summary>DNS</summary><div class="table-wrap"><table><tbody>
-    {% for record_type, values in summaries.dns.items() %}<tr><th>{{ record_type }}</th><td>{% if values %}{% for value in values %}<code>{{ value }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>{% endfor %}
+    {% for record_type, values in summaries.dns.items() %}<tr><th scope="col">{{ record_type }}</th><td>{% if values %}{% for value in values %}<code>{{ value }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>{% endfor %}
   </tbody></table></div></details>
   <details><summary>TLS and HTTPS</summary><div class="table-wrap"><table><tbody>
-    <tr><th>Reachable</th><td>{{ summaries.tls.ok or false }}</td></tr>
-    <tr><th>Address used</th><td>{{ summaries.tls.address or '—' }}</td></tr>
-    <tr><th>TLS</th><td>{{ summaries.tls.tls_version or '—' }} {{ summaries.tls.cipher or '' }}</td></tr>
-    <tr><th>Certificate subject</th><td>{{ summaries.tls.certificate_subject or '—' }}</td></tr>
-    <tr><th>Certificate issuer</th><td>{{ summaries.tls.certificate_issuer or '—' }}</td></tr>
-    <tr><th>Certificate expiry</th><td>{{ summaries.tls.certificate_expires or '—' }}</td></tr>
-    <tr><th>HTTP status</th><td>{{ summaries.tls.status or '—' }} {{ summaries.tls.reason or '' }}</td></tr>
-    {% if summaries.tls.error %}<tr><th>Error</th><td>{{ summaries.tls.error }}</td></tr>{% endif %}
+    <tr><th scope="col">Reachable</th><td>{{ 'yes' if summaries.tls.ok else 'no' }}</td></tr>
+    <tr><th scope="col">Address used</th><td>{{ summaries.tls.address or '—' }}</td></tr>
+    <tr><th scope="col">TLS</th><td>{{ summaries.tls.tls_version or '—' }} {{ summaries.tls.cipher or '' }}</td></tr>
+    <tr><th scope="col">Certificate subject</th><td>{{ summaries.tls.certificate_subject or '—' }}</td></tr>
+    <tr><th scope="col">Certificate issuer</th><td>{{ summaries.tls.certificate_issuer or '—' }}</td></tr>
+    <tr><th scope="col">Certificate expiry</th><td>{{ summaries.tls.certificate_expires or '—' }}</td></tr>
+    <tr><th scope="col">HTTP status</th><td>{{ summaries.tls.status or '—' }} {{ summaries.tls.reason or '' }}</td></tr>
+    {% if summaries.tls.error %}<tr><th scope="col">Error</th><td>{{ summaries.tls.error }}</td></tr>{% endif %}
   </tbody></table></div></details>
   <details><summary>HTTP port 80</summary><div class="table-wrap"><table><tbody>
-    <tr><th>Reachable</th><td>{{ summaries.http.ok or false }}</td></tr>
-    <tr><th>Status</th><td>{{ summaries.http.status or '—' }} {{ summaries.http.reason or '' }}</td></tr>
-    <tr><th>Location</th><td>{{ summaries.http.headers.location if summaries.http.headers else '—' }}</td></tr>
-    {% if summaries.http.error %}<tr><th>Error</th><td>{{ summaries.http.error }}</td></tr>{% endif %}
+    <tr><th scope="col">Reachable</th><td>{{ 'yes' if summaries.http.ok else 'no' }}</td></tr>
+    <tr><th scope="col">Status</th><td>{{ summaries.http.status or '—' }} {{ summaries.http.reason or '' }}</td></tr>
+    <tr><th scope="col">Location</th><td>{{ summaries.http.headers.location if summaries.http.headers else '—' }}</td></tr>
+    {% if summaries.http.error %}<tr><th scope="col">Error</th><td>{{ summaries.http.error }}</td></tr>{% endif %}
   </tbody></table></div></details>
 </section>
 {% endblock %}

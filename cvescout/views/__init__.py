@@ -6,6 +6,7 @@ are unaffected by the split. Submodules own their routes and import `bp` from he
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from flask import Blueprint, Response, request
@@ -32,9 +33,17 @@ def _page() -> int:
     return max(1, request.args.get("page", 1, type=int) or 1)
 
 
-def download(body: str, mimetype: str, suffix: str) -> Response:
-    """Attachment response with a dated filename."""
-    filename = f"cvescout-{date.today().isoformat()}.{suffix}"
+def paginate(total: int) -> tuple[int, int, int]:
+    """Clamp the requested page into range: (page, pages, offset)."""
+    pages = max(1, -(-total // PAGE_SIZE))
+    page = min(_page(), pages)
+    return page, pages, (page - 1) * PAGE_SIZE
+
+
+def download(body: str, mimetype: str, name: str) -> Response:
+    """Attachment response; the filename gets a date prefix and safe characters only."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", name)
+    filename = f"cvescout-{date.today().isoformat()}-{safe}"
     return Response(
         body,
         mimetype=mimetype,

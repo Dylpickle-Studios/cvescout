@@ -11,7 +11,7 @@
   </div>
 </div>
 <section data-refresh="{{ 'true' if active_jobs else 'false' }}"><h2>Open ports</h2><div class="table-wrap"><table>
-<thead><tr><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>CPE</th><th>CVEs</th></tr></thead>
+<thead><tr><th scope="col">Port</th><th scope="col">Service</th><th scope="col">Product</th><th scope="col">Version</th><th scope="col">CPE</th><th scope="col">CVEs</th></tr></thead>
 <tbody>{% for port in ports %}<tr><td>{{ port.port }}/{{ port.protocol }}</td><td>{{ port.service or '—' }}</td><td>{{ port.product or '—' }}</td><td>{{ port.version or port.extra_info or '—' }}</td><td><code>{{ port.cpe or '—' }}</code></td><td>{{ port.vulnerability_count }}</td></tr>{% else %}<tr><td colspan="6">No open ports recorded.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 <section><h2>Matched vulnerabilities</h2><p class="muted">Matches come from service CPE/version data. They are leads, not proof. Explicit checks use only allowlisted non-destructive Nmap NSE scripts.</p>
