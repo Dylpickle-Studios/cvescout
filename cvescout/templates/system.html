@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}System · CVE Scout{% endblock %}
+{% block content %}
+<h1>System</h1>
+<p class="muted">Everything here is read from the running process and its database.</p>
+<section>
+  <h2>Build</h2>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><th scope="row">Version</th><td>{{ version }}</td></tr>
+      <tr><th scope="row">Schema version</th><td>{{ schema_version }}</td></tr>
+      <tr><th scope="row">Hardware profile</th><td><strong>{{ profile.name }}</strong> — {{ profile.reason }}</td></tr>
+      <tr><th scope="row">Scan workers</th><td>{{ workers }}</td></tr>
+      <tr><th scope="row">Nmap timing</th><td>{{ profile.timing }}</td></tr>
+      <tr><th scope="row">Default ports</th><td><code>{{ profile.ports }}</code></td></tr>
+      <tr><th scope="row">Authorized networks</th><td>{% for network in networks %}<code>{{ network }}</code>{% if not loop.last %}, {% endif %}{% else %}none{% endfor %}</td></tr>
+    </tbody>
+  </table></div>
+</section>
+<section>
+  <h2>Data</h2>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><th scope="row">Database</th><td><code>{{ database }}</code></td></tr>
+      <tr><th scope="row">Database size</th><td>{{ size_mb }} MB</td></tr>
+      <tr><th scope="row">History retention</th><td>{{ retention }} days</td></tr>
+      {% for table, count in counts.items() %}<tr><th scope="row">{{ table }}</th><td>{{ count }}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section>
+  <h2>Sources</h2>
+  <div class="table-wrap"><table>
+    <tbody>
+      <tr><th scope="row">CVE sources</th><td>{% for source in cve_sources %}<span class="badge plain">{{ source }}</span> {% else %}none{% endfor %}</td></tr>
+      <tr><th scope="row">NVD API key</th><td>{{ 'configured' if nvd_key else 'not set (slower first lookup)' }}</td></tr>
+      <tr><th scope="row">Cloudflare token</th><td>{{ 'configured' if cloudflare else 'not set' }}</td></tr>
+      <tr><th scope="row">Exploit intel rows</th><td>{{ intel_rows }}{% if intel_checked %} · last refresh {{ intel_checked }}{% endif %}</td></tr>
+      <tr><th scope="row">Last domain scan</th><td>{{ last_scan or 'never' }}</td></tr>
+    </tbody>
+  </table></div>
+</section>
+<section>
+  <h2>Last completed job per kind</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Task</th><th scope="col">Finished</th></tr></thead>
+    <tbody>{% for job in last_jobs %}<tr><td>{{ job.kind }}</td><td>{{ job.last }}</td></tr>{% else %}<tr><td colspan="2">No completed jobs yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

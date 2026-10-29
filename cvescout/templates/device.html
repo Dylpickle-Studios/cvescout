@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ device.address }} · CVE Scout{% endblock %}
+{% block content %}
+<div class="title-row">
+  <div><h1>{{ device.hostname or device.address }}</h1><p>{{ device.address }} · {{ device.mac or 'No MAC' }} · {{ device.vendor or 'Unknown vendor' }}</p></div>
+  <div class="actions">
+    <a class="button" href="{{ url_for('main.device_json', device_id=device.id) }}">Export JSON</a>
+    <a class="button" href="{{ url_for('main.device_csv', device_id=device.id) }}">Export CSV</a>
+    <form method="post" action="{{ url_for('main.scan', kind='ports') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="device_id" value="{{ device.id }}"><button>Rescan ports</button></form>
+    <form method="post" action="{{ url_for('main.scan', kind='vulnerabilities') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="device_id" value="{{ device.id }}"><button>Rescan vulnerabilities</button></form>
+  </div>
+</div>
+<section data-refresh="{{ 'true' if active_jobs else 'false' }}"><h2>Open ports</h2><div class="table-wrap"><table>
+<thead><tr><th>Port</th><th>Service</th><th>Product</th><th>Version</th><th>CPE</th><th>CVEs</th></tr></thead>
+<tbody>{% for port in ports %}<tr><td>{{ port.port }}/{{ port.protocol }}</td><td>{{ port.service or '—' }}</td><td>{{ port.product or '—' }}</td><td>{{ port.version or port.extra_info or '—' }}</td><td><code>{{ port.cpe or '—' }}</code></td><td>{{ port.vulnerability_count }}</td></tr>{% else %}<tr><td colspan="6">No open ports recorded.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+<section><h2>Matched vulnerabilities</h2><p class="muted">Matches come from service CPE/version data. They are leads, not proof. Explicit checks use only allowlisted non-destructive Nmap NSE scripts.</p>
+<div class="cards">
+{% for vulnerability in vulnerabilities %}
+<article class="vulnerability">
+  <div class="vuln-head"><h3><a href="{{ vulnerability.url }}" rel="noopener noreferrer" target="_blank">{{ vulnerability.cve_id }}</a></h3><span class="badge severity-{{ vulnerability.severity|lower }}">{{ vulnerability.severity }} {{ vulnerability.score if vulnerability.score is not none else '' }}</span></div>
+  <p class="muted">
+    <span class="badge {{ 'kev' if vulnerability.kev else 'plain' }}">{{ 'Known exploited' if vulnerability.kev else 'Not in KEV' }}</span>
+    EPSS {{ '%.1f%%'|format(vulnerability.epss * 100) if vulnerability.epss is not none else 'n/a' }}
+    · <span class="badge {{ 'exact' if vulnerability.match_type == 'exact' else 'product' if vulnerability.match_type == 'version' else 'review' }}">{{ {'exact': 'Version match', 'version': 'Version range match'}.get(vulnerability.match_type, 'Product only — verify version') }}</span>
+    · via {{ vulnerability.source }}
+    {% if vulnerability.first_seen and vulnerability.first_seen == vulnerability.last_seen %}· <span class="badge new">New</span>{% endif %}
+    {% if vulnerability.first_seen %}<small>first seen {{ vulnerability.first_seen }}</small>{% endif %}
+  </p>
+  <p><strong>{{ vulnerability.port }}/{{ vulnerability.protocol }}</strong> {{ vulnerability.product }} {{ vulnerability.version }}</p>
+  <p>{{ vulnerability.summary }}</p>
+  {% if vulnerability.check_result %}<details><summary>Last check: {{ vulnerability.check_result }}</summary><pre>{{ vulnerability.check_details }}</pre></details>{% endif %}
+  <form method="post" action="{{ url_for('main.check_vulnerability', vulnerability_id=vulnerability.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" {% if vulnerability.cve_id not in safe_checks %}disabled title="No safe checker available"{% endif %}>Check</button>
+    {% if vulnerability.cve_id not in safe_checks %}<small>No safe checker available</small>{% endif %}
+  </form>
+</article>
+{% else %}<p>No CVE matches recorded.</p>{% endfor %}
+</div>
+{% include 'pagination.html' %}
+</section>
+{% endblock %}

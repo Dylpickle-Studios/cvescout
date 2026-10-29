@@ -1,0 +1,13 @@
+{% if pages > 1 %}
+{% set view_args = dict(request.view_args or {}) %}
+{% set suffix = ('&level=' ~ level) if level else '' %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+    <a class="button" href="{{ url_for(request.endpoint, page=page - 1, **view_args) }}{{ suffix }}">Previous</a>
+  {% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }} · {{ total }} row{{ '' if total == 1 else 's' }}</span>
+  {% if page < pages %}
+    <a class="button" href="{{ url_for(request.endpoint, page=page + 1, **view_args) }}{{ suffix }}">Next</a>
+  {% endif %}
+</nav>
+{% endif %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Public domains · CVE Scout{% endblock %}
+{% block content %}
+<div class="title-row">
+  <div>
+    <h1>Public exposure</h1>
+    <p class="muted">Scan exact public hostnames through the same DNS, CDN, TLS, and HTTP edge seen by internet clients.</p>
+  </div>
+  <form method="post" action="{{ url_for('main.scan_all_domains') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Rescan all domains</button>
+  </form>
+</div>
+<section class="form-card">
+  <h2>Add hostname</h2>
+  <form method="post" action="{{ url_for('main.domains') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Public hostname <input name="name" placeholder="app.example.com" inputmode="url" required></label>
+    <label class="checkbox"><input type="checkbox" name="authorized" value="yes" required> I own or have permission to assess this hostname.</label>
+    <button type="submit">Add hostname</button>
+  </form>
+</section>
+<section data-refresh="{{ 'true' if active_jobs else 'false' }}">
+  <h2>Configured hostnames</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Hostname</th><th>Public edge</th><th>Status</th><th>Findings</th><th>High</th><th>Medium</th><th>Last scan</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for domain in domains %}
+      <tr>
+        <td><a href="{{ url_for('main.domain', domain_id=domain.id) }}">{{ domain.name }}</a></td>
+        <td>{{ domain.provider or 'not scanned' }}</td>
+        <td><span class="badge {{ domain.status }}">{{ domain.status }}</span></td>
+        <td>{{ domain.finding_count }}</td><td>{{ domain.high_count or 0 }}</td><td>{{ domain.medium_count or 0 }}</td>
+        <td>{{ domain.last_scanned or 'never' }}</td>
+        <td><div class="actions compact">
+          <form method="post" action="{{ url_for('main.scan_domain', domain_id=domain.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Scan</button></form>
+          <form method="post" action="{{ url_for('main.delete_domain', domain_id=domain.id) }}" data-confirm="Remove this hostname and its findings?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger" type="submit">Remove</button></form>
+        </div></td>
+      </tr>
+    {% else %}<tr><td colspan="8">No public hostnames configured.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section class="notice">
+  <h2>Scan boundary</h2>
+  <p>Only ports 80 and 443 on public IP addresses are contacted. Redirects are not followed. Subdomains are not enumerated, origins are not bypassed, and exploit payloads are not sent.</p>
+</section>
+{% endblock %}

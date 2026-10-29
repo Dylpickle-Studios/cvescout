@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvescout"
+version = "0.2.0"
+description = "Lightweight local-network inventory and CVE scanner"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "CVE Scout contributors"}]
+keywords = ["cve", "network-scanner", "raspberry-pi", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Flask",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = ["dnspython>=2.6,<3", "Flask>=3.0,<4", "gunicorn>=21,<24"]
+
+[project.optional-dependencies]
+dev = ["build>=1,<2", "ruff>=0.8,<1"]
+
+[project.urls]
+Homepage = "https://github.com/Dylpickle-Studios/cvescout"
+Repository = "https://github.com/Dylpickle-Studios/cvescout"
+Issues = "https://github.com/Dylpickle-Studios/cvescout/issues"
+Changelog = "https://github.com/Dylpickle-Studios/cvescout/blob/main/CHANGELOG.md"
+
+[project.scripts]
+cvescout = "cvescout.__main__:main"
+
+[tool.ruff]
+extend-exclude = ["build", "dist", ".venv", ".pi"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["cvescout*"]
+
+[tool.setuptools.package-data]
+cvescout = ["templates/*.html", "static/*", "units/*.service", "units/*.timer"]

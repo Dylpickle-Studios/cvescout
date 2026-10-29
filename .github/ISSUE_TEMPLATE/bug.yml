@@ -1,0 +1,42 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, API keys, and real network inventory.
+          required: true
+  - type: input
+    attributes:
+      label: CVE Scout version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Platform
+      options:
+        - Raspberry Pi Zero / Raspberry Pi OS
+        - Other Raspberry Pi
+        - Other Linux
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include expected and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Give minimal steps using sanitized addresses and output.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Relevant logs
+      render: text

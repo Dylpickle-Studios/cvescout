@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Settings · CVE Scout{% endblock %}
+{% block content %}
+<div class="title-row">
+  <div>
+    <h1>Notification settings</h1>
+    <p class="muted">CVE Scout notifies on job failure, new high or medium public findings, new high CVE matches, and confirmed vulnerabilities.</p>
+  </div>
+  <form method="post" action="{{ url_for('main.test_notifications') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Send test notification</button>
+  </form>
+</div>
+<form method="post" action="{{ url_for('main.settings') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="verify-grid">
+    {% for channel in channels %}
+    <article class="form-card">
+      <div class="vuln-head">
+        <h3>{{ channel|capitalize }}</h3>
+        <label class="checkbox"><input type="checkbox" name="{{ channel }}.enabled" value="yes" {% if config[channel].enabled %}checked{% endif %}> Enabled</label>
+      </div>
+
+      {% if channel == 'webhook' %}
+        <p class="muted">POSTs JSON <code>{source, title, message, priority}</code> to the URL.</p>
+        <label>Endpoint URL <input name="{{ channel }}.url" value="{{ config[channel].url }}" placeholder="https://example.com/hooks/cvescout" autocomplete="off"></label>
+      {% elif channel == 'ntfy' %}
+        <p class="muted">POSTs the message body to an ntfy topic URL, with Title and Priority headers.</p>
+        <label>Topic URL <input name="{{ channel }}.url" value="{{ config[channel].url }}" placeholder="https://ntfy.sh/my-cvescout" autocomplete="off"></label>
+        <label>Access token <input type="password" name="{{ channel }}.token" value="" placeholder="{{ 'saved, leave blank to keep' if config[channel].token else 'optional' }}" autocomplete="new-password"></label>
+      {% elif channel == 'gotify' %}
+        <p class="muted">POSTs <code>{title, message, priority}</code> to <code>/message</code> with the token as a query parameter.</p>
+        <label>Server URL <input name="{{ channel }}.url" value="{{ config[channel].url }}" placeholder="https://gotify.example.com" autocomplete="off"></label>
+        <label>App token <input type="password" name="{{ channel }}.token" value="" placeholder="{{ 'saved, leave blank to keep' if config[channel].token else 'required' }}" autocomplete="new-password"></label>
+      {% else %}
+        <p class="muted">POSTs JSON <code>{from, to, subject, text}</code> to a provider email API endpoint, with an optional bearer token. Resend-style APIs work unchanged.</p>
+        <label>API endpoint <input name="{{ channel }}.url" value="{{ config[channel].url }}" placeholder="https://api.example.com/emails" autocomplete="off"></label>
+        <label>API token <input type="password" name="{{ channel }}.token" value="" placeholder="{{ 'saved, leave blank to keep' if config[channel].token else 'optional' }}" autocomplete="new-password"></label>
+        <label>From address <input name="{{ channel }}.from" value="{{ config[channel].from }}" placeholder="cvescout@example.com" autocomplete="off"></label>
+        <label>To addresses <input name="{{ channel }}.to" value="{{ config[channel].to }}" placeholder="ops@example.com, me@example.com" autocomplete="off"></label>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  <p><button type="submit">Save settings</button></p>
+</form>
+<section class="notice">
+  <h2>Notes</h2>
+  <p>Tokens are stored in the local SQLite database and never shown again after saving. Leave a token field blank to keep the current value. Channel URLs can point at LAN services, so treat the settings page as an admin-only control. Delivery uses a short timeout and never retries, keeping the Pi Zero responsive.</p>
+</section>
+{% endblock %}

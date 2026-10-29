@@ -1,0 +1,10 @@
+[Unit]
+Description=Run CVE Scout scheduled scan every night
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

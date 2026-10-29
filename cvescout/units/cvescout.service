@@ -1,0 +1,21 @@
+[Unit]
+Description=CVE Scout local vulnerability scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__PREFIX__
+EnvironmentFile=-/etc/cvescout.env
+ExecStart=__PREFIX__/.venv/bin/gunicorn --workers 1 --threads 2 --bind 127.0.0.1:5000 'cvescout:create_app()'
+Restart=on-failure
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=__PREFIX__/instance
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

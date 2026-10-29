@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="title-row">
+  <div><h1>Network inventory</h1><p class="muted">Allowed: {{ networks|join(', ') if networks else 'none configured' }}</p></div>
+  <div class="actions">
+    {% for kind, label in [('network','Rescan network'),('devices','Rescan devices'),('ports','Rescan ports'),('vulnerabilities','Rescan vulnerabilities')] %}
+    <form method="post" action="{{ url_for('main.scan', kind=kind) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">{{ label }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+<section class="stats" aria-label="Inventory summary">
+  <article><strong>{{ counts.devices }}</strong><span>Devices</span></article>
+  <article><strong>{{ counts.online }}</strong><span>Online</span></article>
+  <article><strong>{{ counts.ports }}</strong><span>Open ports</span></article>
+  <article><strong>{{ counts.vulnerabilities }}</strong><span>CVE matches</span></article>
+  <article><strong>{{ counts.resolved }}</strong><span>Resolved CVEs</span></article>
+  <article><strong>{{ counts.domains }}</strong><span>Public domains</span></article>
+  <article><strong>{{ counts.external_findings }}</strong><span>External findings</span></article>
+</section>
+<section>
+  <h2>Devices</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Address</th><th>Name</th><th>Vendor</th><th>Status</th><th>Ports</th><th>CVEs</th><th>Last seen</th></tr></thead>
+    <tbody>
+    {% for device in devices %}
+      <tr>
+        <td><a href="{{ url_for('main.device', device_id=device.id) }}">{{ device.address }}</a></td>
+        <td>{{ device.hostname or '—' }}</td><td>{{ device.vendor or '—' }}</td>
+        <td><span class="badge {{ device.status }}">{{ device.status }}</span></td>
+        <td>{{ device.port_count }}</td><td>{{ device.vulnerability_count }}</td><td>{{ device.last_seen }}</td>
+      </tr>
+    {% else %}<tr><td colspan="7">No devices yet. Rescan network.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+<section>
+  <h2>Recent jobs</h2>
+  <div class="table-wrap"><table data-refresh="{{ 'true' if active_jobs else 'false' }}">
+    <thead><tr><th>ID</th><th>Task</th><th>Target</th><th>Status</th><th>Message</th><th>Started</th></tr></thead>
+    <tbody>{% for job in jobs %}<tr><td>{{ job.id }}</td><td>{{ job.kind }}</td><td>{{ job.target or 'all' }}</td><td><span class="badge {{ job.status }}">{{ job.status }}</span></td><td>{{ job.message or '—' }}</td><td>{{ job.started_at or job.created_at }}</td></tr>{% else %}<tr><td colspan="6">No jobs yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+<section>
+  <h2>Recent log</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>Level</th><th>Action</th><th>Target</th><th>Message</th></tr></thead>
+    <tbody>{% for event in events %}<tr><td>{{ event.created_at }}</td><td>{{ event.level }}</td><td>{{ event.action }}</td><td>{{ event.target or '—' }}</td><td>{{ event.message }}</td></tr>{% else %}<tr><td colspan="5">No events yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

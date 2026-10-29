@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a focused improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What user problem needs solving?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Smallest useful solution
+      description: Describe minimum behavior needed.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Pi Zero impact
+      description: Expected CPU, memory, storage, network, or dependency cost.
+  - type: checkboxes
+    attributes:
+      label: Scope
+      options:
+        - label: This does not add automatic exploitation or destructive checks.
+          required: true

@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}{{ domain.name }} · CVE Scout{% endblock %}
+{% block content %}
+<div class="title-row">
+  <div><h1>{{ domain.name }}</h1><p class="muted">{{ domain.provider or 'Not scanned' }} · Edge-only public assessment</p></div>
+  <div class="actions">
+    <form method="post" action="{{ url_for('main.scan_domain', domain_id=domain.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Rescan domain</button></form>
+    <form method="post" action="{{ url_for('main.delete_domain', domain_id=domain.id) }}" data-confirm="Remove this hostname and its findings?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger" type="submit">Remove</button></form>
+  </div>
+</div>
+<section class="stats">
+  <article><strong>{{ findings|length }}</strong><span>Findings</span></article>
+  <article><strong>{{ findings|selectattr('severity','equalto','high')|list|length }}</strong><span>High</span></article>
+  <article><strong>{{ summaries.addresses|length }}</strong><span>Public IPs</span></article>
+  <article><strong>{{ domain.status }}</strong><span>Last status</span></article>
+</section>
+<section>
+  <h2>Explicit verification</h2>
+  <p class="muted">These checks never run automatically. Supplied origin IPs are used only by the queued worker and are never stored in the database, job history, or audit log. Run a domain scan first; results are compared against that edge snapshot.</p>
+  <div class="verify-grid">
+    <article class="form-card">
+      <h3>Known-origin reachability</h3>
+      <p>Supply up to four origin IPs you already know. Scanner contacts ports 80 and 443 using <code>{{ domain.name }}</code> as HTTP Host and TLS SNI.</p>
+      <form method="post" action="{{ url_for('main.check_domain_origin', domain_id=domain.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Known public origin IPs <input name="origin_ip" placeholder="203.0.113.10, 2001:db8::10" autocomplete="off" required></label>
+        <label class="checkbox"><input type="checkbox" name="authorized" value="yes" required> I own or have permission to check this origin.</label>
+        <button type="submit">Check origin exposure</button>
+      </form>
+    </article>
+    <article class="form-card">
+      <h3>Cloudflare configuration</h3>
+      <p>Read-only API check for proxy status, SSL mode, HTTPS redirect, minimum TLS, TLS 1.3, DNSSEC, and managed WAF visibility.</p>
+      <form method="post" action="{{ url_for('main.check_domain_cloudflare', domain_id=domain.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" {% if not cloudflare_configured %}disabled{% endif %}>Check Cloudflare</button>
+        {% if not cloudflare_configured %}<small>Set <code>CVESCOUT_CLOUDFLARE_API_TOKEN</code> and restart.</small>{% endif %}
+      </form>
+    </article>
+  </div>
+  <h3>Verification history</h3>
+  <div class="cards" data-refresh="{{ 'true' if checks|selectattr('status','in',['queued','running'])|list else 'false' }}">
+  {% for check in checks %}
+    <article class="vulnerability">
+      <div class="vuln-head"><h3>{{ 'Known-origin reachability' if check.kind == 'origin' else 'Cloudflare configuration' }}</h3><span class="badge {{ check.result or check.status }}">{{ check.result or check.status }}</span></div>
+      <p>{{ check.summary or 'Check queued.' }}</p>
+      {% if check.kind == 'origin' and check.details.candidates %}
+        {% for candidate in check.details.candidates %}
+        <p><strong>Origin {{ loop.index }}:</strong> HTTPS {{ 'reachable' if candidate.https.reachable else 'no response' }}{% if candidate.https.status %}, HTTP {{ candidate.https.status }}{% endif %}{% if candidate.https.certificate_trusted is defined and candidate.https.certificate_trusted is not none %}, certificate {{ 'trusted' if candidate.https.certificate_trusted else 'not publicly trusted' }}{% endif %}{% if candidate.https.matches_edge_body %}, matches edge body{% endif %} · HTTP port 80: {{ 'reachable' if candidate.http.reachable else 'no response' }}{% if candidate.http.status %} (HTTP {{ candidate.http.status }}){% endif %}</p>
+        {% endfor %}
+      {% elif check.kind == 'cloudflare' and check.details.checks %}
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Status</th><th>Value</th><th>Recommendation</th></tr></thead><tbody>
+          {% for item in check.details.checks %}<tr><td>{{ item.title }}</td><td><span class="badge {{ item.status }}">{{ item.status }}</span></td><td>{{ item.value }}</td><td>{{ item.recommendation or '—' }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% endif %}
+      <small>{{ check.username }} · {{ check.finished_at or check.started_at }}</small>
+    </article>
+  {% else %}<p>No explicit provider checks run.</p>{% endfor %}
+  </div>
+</section>
+<section>
+  <h2>Findings</h2>
+  <p class="muted">Findings describe the public edge response. They do not prove that a hidden origin is secure.</p>
+  <div class="cards">
+  {% for finding in findings %}
+    <article class="vulnerability">
+      <div class="vuln-head"><h3>{{ finding.title }}</h3><span class="badge severity-{{ finding.severity }}">{{ finding.severity }}</span></div>
+      <p><strong>{{ finding.category }}</strong> · {{ finding.detail }}</p>
+      {% if finding.evidence %}<p><code>{{ finding.evidence }}</code></p>{% endif %}
+      {% if finding.remediation %}<p><strong>Fix:</strong> {{ finding.remediation }}</p>{% endif %}
+      <small>Last seen {{ finding.last_seen }}</small>
+    </article>
+  {% else %}<p>No findings recorded. Run scan.</p>{% endfor %}
+  </div>
+</section>
+<section>
+  <h2>Technical details</h2>
+  <details open><summary>DNS</summary><div class="table-wrap"><table><tbody>
+    {% for record_type, values in summaries.dns.items() %}<tr><th>{{ record_type }}</th><td>{% if values %}{% for value in values %}<code>{{ value }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}—{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div></details>
+  <details><summary>TLS and HTTPS</summary><div class="table-wrap"><table><tbody>
+    <tr><th>Reachable</th><td>{{ summaries.tls.ok or false }}</td></tr>
+    <tr><th>Address used</th><td>{{ summaries.tls.address or '—' }}</td></tr>
+    <tr><th>TLS</th><td>{{ summaries.tls.tls_version or '—' }} {{ summaries.tls.cipher or '' }}</td></tr>
+    <tr><th>Certificate subject</th><td>{{ summaries.tls.certificate_subject or '—' }}</td></tr>
+    <tr><th>Certificate issuer</th><td>{{ summaries.tls.certificate_issuer or '—' }}</td></tr>
+    <tr><th>Certificate expiry</th><td>{{ summaries.tls.certificate_expires or '—' }}</td></tr>
+    <tr><th>HTTP status</th><td>{{ summaries.tls.status or '—' }} {{ summaries.tls.reason or '' }}</td></tr>
+    {% if summaries.tls.error %}<tr><th>Error</th><td>{{ summaries.tls.error }}</td></tr>{% endif %}
+  </tbody></table></div></details>
+  <details><summary>HTTP port 80</summary><div class="table-wrap"><table><tbody>
+    <tr><th>Reachable</th><td>{{ summaries.http.ok or false }}</td></tr>
+    <tr><th>Status</th><td>{{ summaries.http.status or '—' }} {{ summaries.http.reason or '' }}</td></tr>
+    <tr><th>Location</th><td>{{ summaries.http.headers.location if summaries.http.headers else '—' }}</td></tr>
+    {% if summaries.http.error %}<tr><th>Error</th><td>{{ summaries.http.error }}</td></tr>{% endif %}
+  </tbody></table></div></details>
+</section>
+{% endblock %}

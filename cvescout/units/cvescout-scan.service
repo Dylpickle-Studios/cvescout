@@ -1,0 +1,12 @@
+[Unit]
+Description=CVE Scout scheduled scan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__PREFIX__
+EnvironmentFile=-/etc/cvescout.env
+ExecStart=__PREFIX__/.venv/bin/flask --app cvescout scan --kind ports
