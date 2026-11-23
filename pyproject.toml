@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Security",
 ]
-dependencies = ["dnspython>=2.6,<3", "Flask>=3.0,<4", "gunicorn>=21,<24"]
+dependencies = ["dnspython>=2.6,<3", "Flask>=3.0,<4", "gunicorn>=21,<28"]
 
 [project.optional-dependencies]
 dev = ["build>=1,<2", "coverage>=7,<8", "mypy>=1.11,<2", "ruff>=0.8,<1"]
