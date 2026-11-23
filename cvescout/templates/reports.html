@@ -2,7 +2,8 @@
 {% block title %}Reports · CVE Scout{% endblock %}
 {% block content %}
 <h1>Current report</h1>
-<div class="actions"><a class="button" href="{{ url_for('main.reports_csv') }}">Download CSV</a><a class="button" href="{{ url_for('main.reports_json') }}">Download JSON</a><a class="button" href="{{ url_for('main.reports_sarif') }}">Download SARIF</a></div>
+{% set ack_query = {'acknowledged': '1'} if include_acknowledged else {} %}
+<div class="actions"><a class="button" href="{{ url_for('main.reports_csv', **ack_query) }}">Download CSV</a><a class="button" href="{{ url_for('main.reports_json', **ack_query) }}">Download JSON</a><a class="button" href="{{ url_for('main.reports_sarif', **ack_query) }}">Download SARIF</a>{% if include_acknowledged %}<a class="button" href="{{ url_for('main.reports') }}">Hide acknowledged</a>{% else %}<a class="button" href="{{ url_for('main.reports', acknowledged='1') }}">Include acknowledged</a>{% endif %}</div>
 <section class="stats">{% for row in severity %}<article><strong>{{ row.count }}</strong><span>{{ row.severity }}</span></article>{% else %}<article><strong>0</strong><span>CVE matches</span></article>{% endfor %}</section>
 <p class="muted">Exports contain every finding, not just this page. SARIF is for code scanning, SIEMs, and DefectDojo-style importers. Product-only matches come from the CIRCL aggregate when a CVE declares no usable version range. They are leads to verify, and never raise an alert.</p>
 <section><h2>Vulnerabilities</h2><div class="table-wrap"><table>

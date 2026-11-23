@@ -28,6 +28,7 @@ DRY_RUN=0
 PURGE=0
 BACKUP_DIR=""
 KEEP_DATA=0
+DOWNLOAD_DIR=""
 
 usage() {
   cat <<'USAGE'
@@ -173,7 +174,7 @@ create_user() {
 }
 
 fetch_release() {
-  local api asset url
+  local api asset url release_json sums line
   if [ -n "$SOURCE" ]; then
     [ -e "$SOURCE" ] || die "--source path does not exist: $SOURCE"
     PACKAGE="$SOURCE"
@@ -186,14 +187,36 @@ fetch_release() {
   else
     api="https://api.github.com/repos/$REPO/releases/latest"
   fi
-  asset="$(curl -fsSL "$api" | grep -oE '"browser_download_url": *"[^"]+"' | cut -d'"' -f4 | grep -E '\.(whl|tar\.gz)$' | head -1 || true)"
+  release_json="$(curl -fsSL "$api")"
+  asset="$(printf '%s' "$release_json" | grep -oE '"browser_download_url": *"[^"]+"' | cut -d'"' -f4 | grep -E '\.(whl|tar\.gz)$' | head -1 || true)"
   if [ -z "$asset" ]; then
     die "no release package found (tag: ${VERSION:-latest}); publish a release or use --source"
   fi
   url="$asset"
-  PACKAGE="/tmp/$(basename "$url")"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    PACKAGE="/tmp/$(basename "$url")"
+  else
+    # Download into a private directory: a predictable /tmp filename lets a local
+    # attacker pre-create a symlink and redirect the root-owned download.
+    DOWNLOAD_DIR="$(mktemp -d)"
+    PACKAGE="$DOWNLOAD_DIR/$(basename "$url")"
+  fi
   log "Downloading $(basename "$url")"
   run curl -fsSL -o "$PACKAGE" "$url"
+  sums="$(printf '%s' "$release_json" | grep -oE '"browser_download_url": *"[^"]+"' | cut -d'"' -f4 | grep -E '/SHA256SUMS$' | head -1 || true)"
+  if [ -z "$sums" ]; then
+    warn "this release publishes no SHA256SUMS; skipping checksum verification"
+    return
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '  [dry-run] verify SHA256SUMS for %s\n' "$(basename "$url")"
+    return
+  fi
+  log "Verifying release checksum"
+  curl -fsSL -o "$DOWNLOAD_DIR/SHA256SUMS" "$sums"
+  line="$(grep " $(basename "$PACKAGE")$" "$DOWNLOAD_DIR/SHA256SUMS" || true)"
+  [ -n "$line" ] || die "SHA256SUMS does not list $(basename "$url")"
+  ( cd "$DOWNLOAD_DIR" && printf '%s\n' "$line" | sha256sum -c - ) || die "checksum verification failed for $(basename "$url")"
 }
 
 install_app() {
@@ -211,7 +234,10 @@ install_app() {
     "$PREFIX/.venv/bin/pip" install --quiet --upgrade pip
     "$PREFIX/.venv/bin/pip" install --quiet --upgrade "$PACKAGE"
   fi
-  run chown -R "$APP_USER:$APP_USER" "$PREFIX"
+  # Code stays root-owned so a compromised service cannot rewrite itself;
+  # only the data directory belongs to the service account.
+  run chown -R root:root "$PREFIX"
+  run chown -R "$APP_USER:$APP_USER" "$PREFIX/instance"
 }
 
 write_env() {
@@ -338,6 +364,7 @@ uninstall() {
 }
 
 main() {
+  trap 'if [ -n "${DOWNLOAD_DIR:-}" ]; then rm -rf "$DOWNLOAD_DIR"; fi' EXIT
   parse_args "$@"
   need_root "$@"
   detect_platform

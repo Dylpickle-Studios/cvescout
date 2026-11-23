@@ -17,8 +17,18 @@
   <article><strong>{{ counts.ports }}</strong><span>Open ports</span></article>
   <article><strong>{{ counts.vulnerabilities }}</strong><span>CVE matches</span></article>
   <article><strong>{{ counts.resolved }}</strong><span>Resolved CVEs</span></article>
+  <article><strong>{{ counts.acknowledged }}</strong><span>Acknowledged</span></article>
   <article><strong>{{ counts.domains }}</strong><span>Public domains</span></article>
   <article><strong>{{ counts.external_findings }}</strong><span>External findings</span></article>
+</section>
+<section>
+  <h2>Findings trend (30 days)</h2>
+  <p class="muted">{{ trend.new_total }} new · {{ trend.resolved_total }} resolved · peak {{ trend.peak }}/day</p>
+  <svg class="trend-chart" viewBox="0 0 {{ trend.width }} {{ trend.height }}" role="img" aria-label="Daily new and resolved CVE findings over the last 30 days">
+    <polyline class="trend-new" fill="none" stroke-width="2" points="{{ trend.new_points }}"/>
+    <polyline class="trend-resolved" fill="none" stroke-width="2" points="{{ trend.resolved_points }}"/>
+  </svg>
+  <p class="muted"><small>{{ trend.start }} → {{ trend.end }} · <span class="legend-new">new</span> / <span class="legend-resolved">resolved</span></small></p>
 </section>
 <section>
   <h2>Devices</h2>

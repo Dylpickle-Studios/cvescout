@@ -56,7 +56,7 @@ def _fingerprint(row: dict) -> str:
 
 
 def _rule(row: dict) -> dict:
-    rule = {
+    rule: dict = {
         "id": str(row["id"]),
         "name": str(row["id"]),
         "shortDescription": {"text": (row["title"] or str(row["id"]))[:200]},

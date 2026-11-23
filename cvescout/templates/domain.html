@@ -39,7 +39,7 @@
     </article>
   </div>
   <h3>Verification history</h3>
-  <div class="cards" data-refresh="{{ 'true' if checks|selectattr('status','in',['queued','running'])|list else 'false' }}">
+  <div class="cards" data-refresh="{{ 'true' if active_jobs else 'false' }}">
   {% for check in checks %}
     <article class="vulnerability">
       <div class="vuln-head"><h3>{{ 'Known-origin reachability' if check.kind == 'origin' else 'Cloudflare configuration' }}</h3><span class="badge {{ check.result or check.status }}">{{ check.result or check.status }}</span></div>
@@ -69,10 +69,32 @@
       {% if finding.evidence %}<p><code>{{ finding.evidence }}</code></p>{% endif %}
       {% if finding.remediation %}<p><strong>Fix:</strong> {{ finding.remediation }}</p>{% endif %}
       <small>Last seen {{ finding.last_seen }}</small>
+      <form method="post" action="{{ url_for('main.acknowledge_domain_finding', finding_id=finding.id) }}" class="ack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input name="note" placeholder="Reason (e.g. accepted risk, mitigated at edge)" maxlength="500" autocomplete="off" aria-label="Acknowledgment reason">
+        <button type="submit" class="link" title="Hide from current reports and alerts; kept with your reason">Acknowledge</button>
+      </form>
     </article>
   {% else %}<p>No findings recorded. Run scan.</p>{% endfor %}
   </div>
 </section>
+{% if acknowledged %}
+<section><details><summary>Acknowledged ({{ acknowledged|length }}) — hidden from reports and alerts</summary>
+  <div class="cards">
+  {% for finding in acknowledged %}
+    <article class="vulnerability">
+      <div class="vuln-head"><h3>{{ finding.title }}</h3><span class="badge severity-{{ finding.severity }}">{{ finding.severity }}</span></div>
+      <p class="muted">acknowledged by {{ finding.acknowledged_by }} on {{ finding.acknowledged_at }}</p>
+      {% if finding.acknowledge_note %}<p>{{ finding.acknowledge_note }}</p>{% endif %}
+      <form method="post" action="{{ url_for('main.unacknowledge_domain_finding', finding_id=finding.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Unacknowledge</button>
+      </form>
+    </article>
+  {% endfor %}
+  </div>
+</details></section>
+{% endif %}
 <section>
   <h2>Technical details</h2>
   <details open><summary>DNS</summary><div class="table-wrap"><table><tbody>

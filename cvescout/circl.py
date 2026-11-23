@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime, timedelta
 
 from flask import current_app
 
@@ -41,8 +42,15 @@ class CirclError(RuntimeError):
 
 
 def _to_tuple(value: str) -> tuple[int, ...]:
-    parts = re.findall(r"\d+", str(value))[:4]
-    return tuple(int(part) for part in parts) if parts else ()
+    text = str(value).strip()
+    parts = re.findall(r"\d+", text)[:4]
+    if not parts:
+        return ()
+    result = tuple(int(part) for part in parts)
+    # OpenSSL-style letter releases (1.1.1k) sort after the base version.
+    if re.search(r"\d[a-z]$", text):
+        result += (ord(text[-1]) - ord("a") + 1,)
+    return result
 
 
 def _compare(left: tuple[int, ...], right: tuple[int, ...]) -> int:
@@ -77,20 +85,39 @@ def _blocks(record: dict, container: str) -> list[dict]:
     return []
 
 
-def _affected_ranges(record: dict) -> list[str]:
-    ranges = []
+def _affected_entries(record: dict) -> list[dict]:
+    entries = []
     for container in ("cna", "adp"):
         for block in _blocks(record, container):
             for affected in block.get("affected", []) or []:
                 for entry in affected.get("versions", []) or []:
-                    if entry.get("status", "affected") != "affected":
-                        continue
-                    label = entry.get("version") or ""
-                    if entry.get("lessThan"):
-                        label = f"{label} - {entry['lessThan']}"
-                    if label and label != "n/a":
-                        ranges.append(label)
-    return ranges
+                    if entry.get("status", "affected") == "affected":
+                        entries.append(entry)
+    return entries
+
+
+def _entry_matches(current: tuple[int, ...], probe: str, entry: dict) -> bool:
+    """Match one CVE 5.x version entry, honoring lessThan/lessThanOrEqual bounds.
+
+    A ``lessThan`` without a lower version means "every version below the bound",
+    which a plain range label cannot express.
+    """
+    label = (entry.get("version") or "").strip()
+    upper = entry.get("lessThan") or entry.get("lessThanOrEqual") or ""
+    if upper:
+        upper_tuple = _to_tuple(upper)
+        if not upper_tuple:
+            return False
+        inclusive = bool(entry.get("lessThanOrEqual")) and not entry.get("lessThan")
+        comparison = _compare(current, upper_tuple)
+        if comparison > 0 or (comparison == 0 and not inclusive):
+            return False
+        # A plain version narrows the lower bound; a free-form range label does not.
+        lower = _to_tuple(label) if label and not _SEPARATORS.search(label) else ()
+        return not lower or _compare(lower, current) <= 0
+    if label and label != "n/a":
+        return version_in_range(probe, label)
+    return False
 
 
 def _severity(record: dict) -> tuple[str, float | None]:
@@ -122,13 +149,15 @@ def _summary(record: dict) -> str:
 def parse_records(records: list[dict], version: str) -> list[dict]:
     """Turn CVE-5.x records into the finding shape used by the rest of the app."""
     findings = []
+    current = _to_tuple(version)
     for record in records:
         cve_id = record.get("cveMetadata", {}).get("cveId")
         if not cve_id:
             continue
         severity, score = _severity(record)
-        ranges = _affected_ranges(record)
-        matched = bool(version) and any(version_in_range(version, label) for label in ranges)
+        matched = bool(current) and any(
+            _entry_matches(current, version, entry) for entry in _affected_entries(record)
+        )
         findings.append(
             {
                 "cve_id": cve_id,
@@ -147,8 +176,6 @@ def _cached(key: str) -> tuple[list[dict] | None, bool]:
     row = get_db().execute("SELECT payload,fetched_at FROM cve_cache WHERE cpe=?", (key,)).fetchone()
     if not row:
         return None, False
-    from datetime import UTC, datetime, timedelta
-
     fetched = datetime.fromisoformat(row["fetched_at"])
     fresh = fetched >= datetime.now(UTC) - timedelta(hours=current_app.config["NVD_CACHE_HOURS"])
     return json.loads(row["payload"]), fresh

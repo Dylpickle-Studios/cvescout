@@ -159,6 +159,23 @@ MIGRATIONS: dict[int, str] = {
     UPDATE vulnerabilities SET first_seen = last_seen WHERE first_seen IS NULL;
     UPDATE domain_findings SET first_seen = last_seen WHERE first_seen IS NULL;
     """,
+    5: """
+    UPDATE jobs SET status='failed', message='Superseded duplicate job',
+        finished_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now')
+    WHERE status IN ('queued','running') AND id NOT IN (
+        SELECT MAX(id) FROM jobs WHERE status IN ('queued','running') GROUP BY kind, target
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_active_target
+        ON jobs(kind, target) WHERE status IN ('queued','running');
+    """,
+    6: """
+    ALTER TABLE vulnerabilities ADD COLUMN acknowledged_at TEXT;
+    ALTER TABLE vulnerabilities ADD COLUMN acknowledged_by TEXT NOT NULL DEFAULT '';
+    ALTER TABLE vulnerabilities ADD COLUMN acknowledge_note TEXT NOT NULL DEFAULT '';
+    ALTER TABLE domain_findings ADD COLUMN acknowledged_at TEXT;
+    ALTER TABLE domain_findings ADD COLUMN acknowledged_by TEXT NOT NULL DEFAULT '';
+    ALTER TABLE domain_findings ADD COLUMN acknowledge_note TEXT NOT NULL DEFAULT '';
+    """,
 }
 
 
@@ -178,6 +195,10 @@ def get_db() -> sqlite3.Connection:
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
         g.db.execute("PRAGMA journal_mode = WAL")
+        # WAL with NORMAL is the documented-safe pairing: a crash can lose the last
+        # transaction but never corrupts the database, and it avoids an fsync per
+        # commit, which is slow on SD cards and dominated test startup time.
+        g.db.execute("PRAGMA synchronous = NORMAL")
     return g.db
 
 
@@ -240,6 +261,8 @@ def prune_history(days: int) -> int:
         "DELETE FROM jobs WHERE status IN ('completed','failed') AND created_at < ?",
         "DELETE FROM checks WHERE status IN ('completed','failed') AND started_at < ?",
         "DELETE FROM domain_checks WHERE status IN ('completed','failed') AND started_at < ?",
+        # Stale source payloads for CPEs that no longer appear would otherwise grow forever.
+        "DELETE FROM cve_cache WHERE fetched_at < ?",
     ):
         removed += db.execute(statement, (cutoff,)).rowcount
     db.commit()

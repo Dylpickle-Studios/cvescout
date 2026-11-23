@@ -16,20 +16,23 @@ Designed for a Raspberry Pi Zero: server-rendered HTML, SQLite, one background w
 ## Features
 
 - Local IPv4 discovery (`nmap -sn`)
-- TCP port and lightweight service/version profiling (`nmap -sV --version-light`)
-- CVE correlation through NVD API, cached in SQLite
+- TCP port and lightweight service/version profiling (`nmap -sV --version-light`), with opt-in UDP ports for IoT/service discovery
+- CVE correlation through NVD and CIRCL, cached in SQLite; an explicit product map covers fingerprints that have a version but no CPE
 - Network, device, port, and vulnerability rescan controls
 - Device inventory and current vulnerability report
+- Acknowledge findings with a reason (backported fix, accepted risk) to hide them from current reports and alerts; reversible and audited
 - Explicit per-CVE verification: never automatic
-- Small allowlist of non-destructive Nmap NSE verification scripts
+- Allowlisted non-destructive Nmap NSE verification scripts, plus a payload-free version re-verification for any version-based match
 - Public hostname DNS, TLS, HTTP redirect, security-header, cookie, SPF, DMARC, and CDN/WAF-edge checks
+- Passive CVE correlation for public hostnames from disclosed Server/X-Powered-By versions and CMS meta generators (WordPress, Drupal, Joomla), using the same cached CVE sources
 - Cloudflare, CloudFront, Fastly, Akamai, Azure Front Door, Vercel, and Netlify detection
 - Public-IP-only SSRF protection; exact hostname, ports 80/443, and no redirect following
 - Explicit known-origin reachability check for up to four supplied IPs, compared against the last edge scan and never stored
 - Optional read-only Cloudflare API check for proxy, TLS, HTTPS, DNSSEC, and managed WAF settings
-- Report export as CSV or JSON for tickets and audits
+- Report export as CSV, JSON, or SARIF for tickets, audits, and code-scanning importers
 - Notifications on job failure, new high/medium findings, new high CVEs, and confirmed vulnerabilities via webhook, ntfy, gotify, or an email JSON API
-- Scheduled scans through `flask --app cvescout scan` and a bundled systemd timer
+- Scheduled scans through `flask --app cvescout scan` (including `--kind all` for the full pipeline) and a bundled systemd timer
+- Monitoring: open `/healthz` liveness probe and token-gated Prometheus `/metrics`; 30-day findings trend on the dashboard
 - Password authentication with failed-login throttling, CSRF protection, security response headers, expiring sessions, constrained scan networks, audit log
 
 ## Install
@@ -105,6 +108,7 @@ A Pi Zero stays at one worker on purpose: each Nmap process costs 10-20 MB of RA
 | `CVESCOUT_NMAP_TIMING` | profile | Nmap `-T` timing template |
 | `CVESCOUT_MAX_HOSTS` | `1024` | Maximum addresses allowed per configured CIDR |
 | `CVESCOUT_PORTS` | profile | Nmap port expression |
+| `CVESCOUT_UDP_PORTS` | empty | Opt-in UDP port expression (e.g. `53,123,161,1900,5353`); empty keeps scans TCP-only |
 | `CVESCOUT_NMAP` | `nmap` | Nmap executable path |
 | `CVESCOUT_NVD_API_KEY` | empty | Optional NVD key; removes slow unauthenticated pacing |
 | `CVESCOUT_NVD_CACHE_HOURS` | `24` | CVE lookup cache lifetime |
@@ -120,6 +124,7 @@ A Pi Zero stays at one worker on purpose: each Nmap process costs 10-20 MB of RA
 | `CVESCOUT_SESSION_HOURS` | `12` | Browser session lifetime |
 | `CVESCOUT_SECRET_FILE` | `instance/secret_key` | Persistent Flask session secret path |
 | `CVESCOUT_HTTPS` | `0` | Set `1` when browser reaches app through HTTPS |
+| `CVESCOUT_METRICS_TOKEN` | empty | Enables `/metrics` (Prometheus text) when set; requires `Authorization: Bearer <token>` |
 
 Network detection can be too broad on unusual routing setups. Set `CVESCOUT_NETWORKS` explicitly. Scans and checks reject targets outside configured CIDRs.
 
@@ -138,7 +143,7 @@ Public domain scans validate that every resolved address is globally routable, t
 
 ### CVE sources and exploit intelligence
 
-CVE Scout does not contain a vulnerability database. It asks public CVE sources about the CPE (product and version) that Nmap reported for each open port, then stores the matching CVEs locally with severity and CVSS score.
+CVE Scout does not contain a vulnerability database. It asks public CVE sources about the CPE (product and version) that Nmap reported for each open port, then stores the matching CVEs locally with severity and CVSS score. When Nmap reports a product and version but no CPE, an explicit product map (`cvescout/product_cpes.py`: OpenSSH, MySQL/MariaDB, PostgreSQL, Redis, Samba, Tomcat, and other common services) supplies the CPE so those ports are still correlated. Unknown products are skipped, never guessed.
 
 Two sources are queried by default:
 
@@ -185,18 +190,28 @@ Restart CVE Scout afterwards (`sudo systemctl restart cvescout`). If a scan repo
 
 Findings have a lifecycle. A finding that disappears from a later scan is marked resolved rather than deleted, so the current report stays clean while history survives. If it comes back, `resolved_at` clears and it alerts again. Device pages mark findings first seen in the most recent scan with a **New** badge, and the dashboard counts resolved CVEs separately.
 
-CVE matches are version-based leads, not proof. Current explicit verification allowlist:
+CVE matches are version-based leads, not proof. Every match can be verified explicitly, in one of two ways:
 
-- CVE-2014-0160 — `ssl-heartbleed`
-- CVE-2014-0224 — `ssl-ccs-injection`
-- CVE-2014-3566 — `ssl-poodle`
-- CVE-2015-4000 — `ssl-dh-params`
+**NSE detectors** — a hard-coded allowlist of bounded, non-destructive Nmap scripts:
 
-Other CVEs show “No safe checker available.” Add checks only when they are bounded and non-destructive.
+| CVE | Script |
+|---|---|
+| CVE-2014-0160 | `ssl-heartbleed` |
+| CVE-2014-0224 | `ssl-ccs-injection` |
+| CVE-2014-3566 | `ssl-poodle` |
+| CVE-2015-4000 | `ssl-dh-params` |
+| CVE-2017-0143 … CVE-2017-0148 (EternalBlue / MS17-010) | `smb-vuln-ms17-010` |
+| CVE-2012-0002, CVE-2012-0152 (MS12-020 RDP) | `rdp-vuln-ms12-020` |
+
+If your Nmap build lacks a detector, the check reports that clearly instead of failing.
+
+**Version re-verification** — for any other CVE with a version-based match, the check re-probes the single port's service version and re-correlates it against the CVE sources. It sends no payloads at all and reports `version_confirmed` (the fresh fingerprint still matches) or `version_not_reproduced` (the service changed or the match was a false positive). A confirmation is version-based, not proof of exploitability.
+
+Product-only leads have no safe active check; they show guidance to confirm the installed version manually. Scripts that execute code on the target (e.g. `http-vuln-cve2012-1823`) or can crash it (e.g. `smb-vuln-ms08-067`) are deliberately never allowlisted. Add detectors only when they are bounded and non-destructive.
 
 ### Public domain scan boundary
 
-Public scans inspect only the exact configured hostname. They query public DNS records and make bounded `GET /` requests on ports 80 and 443. Redirects are recorded but not followed. They do not enumerate subdomains, discover historical DNS, guess origin IPs, submit credentials, or send exploit payloads.
+Public scans inspect only the exact configured hostname. They query public DNS records and make bounded `GET /` and `GET /.well-known/security.txt` requests on ports 80 and 443. Redirects are recorded but not followed. Software versions disclosed in `Server`/`X-Powered-By` headers are mapped to CPEs through an explicit product table and correlated with the same cached CVE sources as local ports; only the CPE leaves your network, and header versions may be masked or backported, so matches are leads. They do not enumerate subdomains, discover historical DNS, guess origin IPs, submit credentials, or send exploit payloads.
 
 Known-origin checks run only after a user supplies one to four globally routable IPs and confirms authorization. The addresses remain in worker memory only; they are not written to jobs, checks, reports, or audit events. A `reachable` result means at least one supplied origin answered directly with the public hostname, and the summary says how many of how many. Results are compared against the last domain scan and state its age, so rescan after changing the edge. A `not_reachable` result is a point-in-time observation covering only the supplied addresses.
 
@@ -229,10 +244,10 @@ Delivery is best effort: one short timeout, no retries, and a failure only adds 
 
 | Page | What it shows |
 |---|---|
-| Inventory | device table, running jobs, recent audit events |
-| Device | open ports, matched CVEs with match confidence, KEV/EPSS, explicit **Check** |
+| Inventory | device table, 30-day findings trend, running jobs, recent audit events |
+| Device | open ports, matched CVEs with match confidence, KEV/EPSS, explicit **Check**, **Acknowledge** with a reason |
 | Public domains | hostname inventory plus edge scans, origin and Cloudflare checks |
-| Reports | paginated findings, CSV/JSON/SARIF download, provider and CVE verification history |
+| Reports | paginated findings, CSV/JSON/SARIF download, provider and CVE verification history, optional acknowledged findings |
 | Logs | paginated audit log with a level filter |
 | System | version, schema version, hardware profile, DB size, row counts, sources, last job per kind |
 | Settings | notification channels and test delivery |
@@ -249,7 +264,7 @@ Pages that show job state refresh themselves every 5 seconds while work is runni
 | `/devices/<id>.csv` | CSV | one device |
 | `/devices/<id>.json` | JSON | one device, with its address, hostname, and status |
 
-Every row carries severity, CVSS score, match confidence, source, KEV flag, EPSS score, last check result, `first_seen`, and last-seen time, so a report can be handed to a person or a language model without extra lookups. Because `first_seen` is recorded once and kept, two exports can be diffed to show what is new. SARIF results use stable fingerprints, so re-importing an unchanged network does not reopen closed findings.
+Every row carries severity, CVSS score, match confidence, source, KEV flag, EPSS score, last check result, `first_seen`, and last-seen time, so a report can be handed to a person or a language model without extra lookups. Because `first_seen` is recorded once and kept, two exports can be diffed to show what is new. SARIF results use stable fingerprints, so re-importing an unchanged network does not reopen closed findings. Acknowledged findings are excluded by default; add `?acknowledged=1` to the report page or any export URL to include them with their reason.
 
 ## Raspberry Pi Zero notes
 
@@ -266,7 +281,7 @@ CVESCOUT_PORTS=22,23,53,80,443,445,548,554,631,1883,3306,3389,5000,5432,6379,808
 - Keep Gunicorn at one worker; the job queue lives in process memory.
 - NVD without an API key enforces conservative pacing, so the first vulnerability scan is the slow one.
 - Use a DHCP reservation for the Pi's address, since SSH and any proxy bookmark will otherwise break when the lease changes.
-- SQLite uses WAL mode. Back up `instance/cvescout.sqlite3` plus `instance/secret_key`, and keep `CVESCOUT_HISTORY_DAYS` at 90 or lower to limit SD card writes.
+- SQLite uses WAL mode with `synchronous=NORMAL` to limit SD card writes. Back up with `flask --app cvescout backup --dest /safe/path` (online, WAL-safe; copies the database and secret), and keep `CVESCOUT_HISTORY_DAYS` at 90 or lower.
 
 ## Development
 
@@ -276,6 +291,7 @@ blueprint, so `url_for('main.device', ...)` keeps working wherever a route is mo
 ```sh
 pip install -e '.[dev]'
 ruff check .
+python -m mypy
 python -m unittest discover -s tests -v
 python -m build
 ```

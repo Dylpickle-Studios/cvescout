@@ -146,6 +146,29 @@ def _settings_checks(settings: dict) -> list[dict]:
             "Enable TLS 1.3." if not tls13_ok else "",
         )
     )
+    security_level = str(settings.get("security_level", "unknown"))
+    level_ok = security_level not in {"essentially_off", "off", "unknown"}
+    checks.append(
+        _check(
+            "security.level",
+            "pass" if level_ok else "fail",
+            "info" if level_ok else "low",
+            "Security level",
+            security_level,
+            "Raise the security level to medium or higher." if not level_ok else "",
+        )
+    )
+    browser_check = str(settings.get("browser_check", "unknown"))
+    checks.append(
+        _check(
+            "browser.check",
+            "pass" if browser_check == "on" else "review",
+            "info" if browser_check == "on" else "low",
+            "Browser integrity check",
+            browser_check,
+            "Enable the browser integrity check." if browser_check != "on" else "",
+        )
+    )
     return checks
 
 

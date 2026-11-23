@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
@@ -80,10 +81,16 @@ def _set_job(job_id: int, status: str, message: str = "") -> None:
 
 def _insert_job(kind: str, target: str, username: str) -> int:
     db = get_db()
-    job_id = db.execute(
-        "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
-        (kind, target, username, "queued", now()),
-    ).lastrowid
+    try:
+        job_id = db.execute(
+            "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
+            (kind, target, username, "queued", now()),
+        ).lastrowid
+    except sqlite3.IntegrityError as exc:
+        # The partial unique index closes the check-then-insert race in _ensure_idle.
+        db.rollback()
+        raise JobBusy(f"A {kind} job for this target is already queued or running") from exc
+    assert job_id is not None  # sqlite always sets lastrowid after a successful INSERT
     db.commit()
     return job_id
 
@@ -95,7 +102,7 @@ def run_scan_now(
     domain_id: int | None = None,
 ) -> tuple[str, str]:
     """Run one scan synchronously and record it as a job. Used by the CLI, not the web UI."""
-    app = current_app._get_current_object()
+    app = current_app._get_current_object()  # type: ignore[attr-defined]
     db = get_db()
     if domain_id is not None:
         domain = db.execute("SELECT name FROM domains WHERE id=?", (domain_id,)).fetchone()
@@ -196,15 +203,20 @@ def _create_domain_check(db, domain_id: int, kind: str, username: str):
     if not domain:
         raise ValueError("Domain not found")
     _ensure_idle(db, kind, domain["name"])
-    check_cursor = db.execute(
-        "INSERT INTO domain_checks(domain_id,kind,username,status,started_at) VALUES(?,?,?,?,?)",
-        (domain_id, kind, username, "queued", now()),
-    )
-    job_cursor = db.execute(
-        "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
-        (kind, domain["name"], username, "queued", now()),
-    )
-    db.commit()
+    try:
+        # Job first: the unique index rejects a duplicate before a check row exists.
+        job_cursor = db.execute(
+            "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
+            (kind, domain["name"], username, "queued", now()),
+        )
+        check_cursor = db.execute(
+            "INSERT INTO domain_checks(domain_id,kind,username,status,started_at) VALUES(?,?,?,?,?)",
+            (domain_id, kind, username, "queued", now()),
+        )
+        db.commit()
+    except sqlite3.IntegrityError as exc:
+        db.rollback()
+        raise JobBusy(f"A {kind} check for this domain is already queued or running") from exc
     return domain, check_cursor.lastrowid, job_cursor.lastrowid
 
 
@@ -308,14 +320,17 @@ def _run_vulnerability_check(app, job_id: int, check_id: int, vulnerability_id: 
         db.execute("UPDATE checks SET status='running' WHERE id=?", (check_id,))
         db.commit()
         row = db.execute(
-            "SELECT v.cve_id,p.port,d.address FROM vulnerabilities v "
+            "SELECT v.cve_id,v.port_id,v.match_type,p.port,p.protocol,d.address FROM vulnerabilities v "
             "JOIN ports p ON p.id=v.port_id JOIN devices d ON d.id=p.device_id WHERE v.id=?",
             (vulnerability_id,),
         ).fetchone()
         try:
             if not row:
                 raise ValueError("Vulnerability no longer exists")
-            status, details = checks.run_check(row["address"], row["port"], row["cve_id"])
+            status, details = checks.run_check(
+                row["address"], row["port"], row["cve_id"],
+                port_id=row["port_id"], match_type=row["match_type"], protocol=row["protocol"],
+            )
             db.execute(
                 "UPDATE checks SET status=?,result=?,details=?,finished_at=? WHERE id=?",
                 ("completed", status, details, now(), check_id),
@@ -345,16 +360,22 @@ def submit_check(app, vulnerability_id: int, username: str) -> tuple[int, int]:
     if not db.execute("SELECT 1 FROM vulnerabilities WHERE id=?", (vulnerability_id,)).fetchone():
         raise ValueError("Vulnerability not found")
     _ensure_idle(db, "check", str(vulnerability_id))
-    check_cursor = db.execute(
-        "INSERT INTO checks(vulnerability_id,username,status,started_at) VALUES(?,?,?,?)",
-        (vulnerability_id, username, "queued", now()),
-    )
-    job_cursor = db.execute(
-        "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
-        ("check", str(vulnerability_id), username, "queued", now()),
-    )
-    db.commit()
+    try:
+        # Job first: the unique index rejects a duplicate before a check row exists.
+        job_cursor = db.execute(
+            "INSERT INTO jobs(kind,target,username,status,created_at) VALUES(?,?,?,?,?)",
+            ("check", str(vulnerability_id), username, "queued", now()),
+        )
+        check_cursor = db.execute(
+            "INSERT INTO checks(vulnerability_id,username,status,started_at) VALUES(?,?,?,?)",
+            (vulnerability_id, username, "queued", now()),
+        )
+        db.commit()
+    except sqlite3.IntegrityError as exc:
+        db.rollback()
+        raise JobBusy("A check for this vulnerability is already queued or running") from exc
     check_id, job_id = check_cursor.lastrowid, job_cursor.lastrowid
+    assert check_id is not None and job_id is not None
     log_event("info", "vulnerability.check.queued", "Vulnerability check queued", str(vulnerability_id), username)
     _pool().submit(_run_vulnerability_check, app, job_id, check_id, vulnerability_id, username)
     return job_id, check_id

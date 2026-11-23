@@ -24,6 +24,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         NMAP=os.getenv("CVESCOUT_NMAP", "nmap"),
         NMAP_TIMING=profile.timing,
         PORTS=profile.ports,
+        UDP_PORTS=os.getenv("CVESCOUT_UDP_PORTS", ""),
         WORKERS=profile.workers,
         PROFILE=profile,
         NVD_API=os.getenv("CVESCOUT_NVD_API", "https://services.nvd.nist.gov/rest/json/cves/2.0"),
@@ -41,6 +42,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         NOTIFY_TIMEOUT=int(os.getenv("CVESCOUT_NOTIFY_TIMEOUT", "10")),
         CLOUDFLARE_API="https://api.cloudflare.com/client/v4",
         CLOUDFLARE_API_TOKEN=os.getenv("CVESCOUT_CLOUDFLARE_API_TOKEN", ""),
+        METRICS_TOKEN=os.getenv("CVESCOUT_METRICS_TOKEN", ""),
         HISTORY_RETENTION_DAYS=int(os.getenv("CVESCOUT_HISTORY_DAYS", "90")),
         PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.getenv("CVESCOUT_SESSION_HOURS", "12"))),
         SESSION_COOKIE_HTTPONLY=True,
@@ -75,6 +77,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        # Findings and audit data must not linger in browser or proxy caches.
+        # Static assets keep their own max-age set by Flask.
+        response.headers.setdefault("Cache-Control", "no-store")
         if app.config["SESSION_COOKIE_SECURE"]:
             response.headers.setdefault("Strict-Transport-Security", "max-age=15552000")
         return response

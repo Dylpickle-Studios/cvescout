@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from cvescout import create_app
-from cvescout.db import get_db, now
+from cvescout.db import MIGRATIONS, _migrate, get_db, now
 
 
 class LifecycleTests(unittest.TestCase):
@@ -145,14 +146,22 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNotNone(gone["resolved_at"])
 
     def test_migration_backfills_first_seen_for_old_rows(self):
-        with self.app.app_context():
-            db = get_db()
-            db.execute("UPDATE vulnerabilities SET first_seen=NULL")
-            db.commit()
-        # simulated upgrade already ran; assert the column is nullable and readable
-        with self.app.app_context():
-            get_db().execute("SELECT first_seen,resolved_at FROM vulnerabilities").fetchall()
-        self.assertEqual(get_db if False else True, True)
+        # Build a schema-v3 database (no first_seen column), then migrate forward.
+        connection = sqlite3.connect(":memory:")
+        for version in (1, 2, 3):
+            connection.executescript(MIGRATIONS[version])
+        connection.execute("PRAGMA user_version = 3")
+        connection.execute("INSERT INTO devices(address,status,last_seen) VALUES('192.168.2.40','up','2026-01-01T00:00:00+00:00')")
+        connection.execute("INSERT INTO ports(device_id,port,protocol,state,last_seen) VALUES(1,443,'tcp','open','2026-01-01T00:00:00+00:00')")
+        connection.execute(
+            "INSERT INTO vulnerabilities(port_id,cve_id,source,last_seen) VALUES(1,'CVE-2020-0001','NVD','2026-01-01T00:00:00+00:00')"
+        )
+        connection.commit()
+        _migrate(connection)
+        row = connection.execute("SELECT first_seen,resolved_at FROM vulnerabilities").fetchone()
+        connection.close()
+        self.assertEqual(row[0], "2026-01-01T00:00:00+00:00")
+        self.assertIsNone(row[1])
 
 
 if __name__ == "__main__":

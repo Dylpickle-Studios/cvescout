@@ -106,6 +106,9 @@ class IntegrationTests(unittest.TestCase):
 
     @patch("cvescout.checks.subprocess.run")
     def test_explicit_check_uses_only_mapped_script(self, run):
+        from cvescout import checks
+
+        checks._script_availability.clear()
         run.return_value = SimpleNamespace(
             returncode=0,
             stderr="",
@@ -117,7 +120,9 @@ class IntegrationTests(unittest.TestCase):
             self.assertIn("NOT VULNERABLE", details)
             unsupported = run_check("192.168.50.9", 443, "CVE-2099-9999")
             self.assertEqual(unsupported[0], "unsupported")
-        self.assertEqual(run.call_count, 1)
+        # One --script-help availability probe plus the check itself.
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("--script-help", run.call_args_list[0].args[0])
         command = run.call_args.args[0]
         self.assertEqual(command[command.index("--script") + 1], "ssl-heartbleed")
         self.assertNotIn("CVE-2014-0160", command)

@@ -105,7 +105,7 @@ class DomainTests(unittest.TestCase):
                 "email.spf_allow_all",
                 "email.dmarc_monitor_only",
                 "http.hsts_missing",
-                "cookie.0.secure_missing",
+                "cookie.session.secure_missing",
                 "http.redirect_missing",
             }.issubset(keys)
         )
@@ -117,7 +117,7 @@ class DomainTests(unittest.TestCase):
     def test_domain_scan_persists_findings_without_cookie_values(self, resolve, collect_dns, probe_https_mock, probe_http_mock):
         resolve.return_value = ["93.184.216.34"]
         collect_dns.return_value = {"A": ["93.184.216.34"], "CNAME": [], "NS": [], "MX": [], "TXT": [], "DMARC": []}
-        probe_https_mock.return_value = {
+        main_https = {
             "ok": True,
             "address": "93.184.216.34",
             "tls_version": "TLSv1.3",
@@ -132,6 +132,13 @@ class DomainTests(unittest.TestCase):
             },
             "set_cookies": ["session=super-secret; Secure; HttpOnly"],
         }
+
+        def https_side_effect(name, addresses, **kwargs):
+            if kwargs.get("path") == "/.well-known/security.txt":
+                return {"ok": True, "status": 200, "body_text": "Contact: mailto:security@example.com\n", "headers": {}, "set_cookies": []}
+            return main_https
+
+        probe_https_mock.side_effect = https_side_effect
         probe_http_mock.return_value = {
             "ok": True,
             "status": 301,
@@ -146,14 +153,18 @@ class DomainTests(unittest.TestCase):
             ).lastrowid
             db.commit()
             total, new_findings = scan_domain(domain_id)
-            self.assertEqual(total, 1)
+            keys = {row["finding_key"] for row in db.execute("SELECT finding_key FROM domain_findings")}
+            self.assertEqual(total, 3)  # edge provider, cookie SameSite, security.txt present
+            self.assertIn("cookie.session.samesite_missing", keys)
+            self.assertIn("disclosure.security_txt", keys)
             self.assertEqual(new_findings, [])  # repeat scan of an unchanged site reports nothing new
             domain = db.execute("SELECT * FROM domains WHERE id=?", (domain_id,)).fetchone()
             stored = json.loads(domain["tls_summary"])
             self.assertEqual(domain["provider"], "Cloudflare")
-            self.assertEqual(domain["status"], "ok")
+            self.assertEqual(domain["status"], "warning")  # the low SameSite finding
             self.assertEqual(stored["set_cookies"], ["session"])
             self.assertNotIn("super-secret", domain["tls_summary"])
+            self.assertNotIn("body_text", domain["tls_summary"])
 
     def test_origin_list_validation(self):
         self.assertEqual(

@@ -7,11 +7,13 @@ import json
 import re
 import socket
 import ssl
+import time
 
 import dns.exception
 import dns.resolver
 from flask import current_app
 
+from . import domain_cves
 from .db import get_db, now
 from .domain_findings import analyze_domain
 from .version import __version__
@@ -19,6 +21,28 @@ from .version import __version__
 
 class DomainScanError(RuntimeError):
     pass
+
+
+SECURITY_TXT_PATH = "/.well-known/security.txt"
+
+_META_TAG = re.compile(rb"<meta\s+[^>]*>", re.IGNORECASE)
+_GENERATOR_NAME = re.compile(rb"""name\s*=\s*["']?generator["']?""", re.IGNORECASE)
+_GENERATOR_CONTENT = re.compile(rb"""content\s*=\s*(?:["']([^"']+)["']|([^\s>]+))""", re.IGNORECASE)
+
+
+def _generator_from_body(body: bytes) -> str:
+    """Product/version from a meta generator tag (WordPress, Joomla, ...).
+
+    Analyzed in memory like cookie values; only the resulting product/version
+    string is kept, never the page content.
+    """
+    for tag in _META_TAG.findall(body):
+        if _GENERATOR_NAME.search(tag):
+            match = _GENERATOR_CONTENT.search(tag)
+            if match:
+                value = match.group(1) or match.group(2) or b""
+                return value.decode("utf-8", "replace").strip()[:120]
+    return ""
 
 
 def normalize_domain(value: str) -> str:
@@ -42,7 +66,7 @@ def resolve_public_addresses(name: str) -> list[str]:
         records = socket.getaddrinfo(name, 443, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise DomainScanError(f"DNS resolution failed: {exc}") from exc
-    addresses = sorted({record[4][0] for record in records})
+    addresses = sorted({str(record[4][0]) for record in records})
     if not addresses:
         raise DomainScanError("Hostname has no A or AAAA address")
     if len(addresses) > 16:
@@ -82,13 +106,24 @@ def collect_dns(name: str, addresses: list[str]) -> dict[str, list[str]]:
     return records
 
 
-def _http_response(sock: socket.socket, name: str) -> dict:
+def _remaining(sock: socket.socket, deadline: float) -> None:
+    """Cap each read at the probe's remaining budget so a trickle-feeding server
+    cannot hold the single scan worker far beyond the configured timeout."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("public hostname probe exceeded its time budget")
+    sock.settimeout(min(current_app.config["DOMAIN_CONNECT_TIMEOUT"], remaining))
+
+
+def _http_response(sock: socket.socket, name: str, deadline: float, path: str = "/", capture_text: bool = False) -> dict:
     request = (
-        f"GET / HTTP/1.1\r\nHost: {name}\r\nUser-Agent: CVE-Scout/{__version__}\r\n"
+        f"GET {path} HTTP/1.1\r\nHost: {name}\r\nUser-Agent: CVE-Scout/{__version__}\r\n"
         "Accept: text/html,*/*;q=0.8\r\nConnection: close\r\n\r\n"
     )
+    _remaining(sock, deadline)
     sock.sendall(request.encode("ascii"))
     response = http.client.HTTPResponse(sock)
+    _remaining(sock, deadline)
     response.begin()
     headers: dict[str, str] = {}
     cookies = []
@@ -101,16 +136,30 @@ def _http_response(sock: socket.socket, name: str) -> dict:
         else:
             headers[lowered] = value
     limit = current_app.config["DOMAIN_MAX_BYTES"]
-    body = response.read(limit + 1)
-    return {
+    body = bytearray()
+    while len(body) <= limit:
+        _remaining(sock, deadline)
+        chunk = response.read(min(8192, limit + 1 - len(body)))
+        if not chunk:
+            break
+        body.extend(chunk)
+    result = {
         "status": response.status,
         "reason": response.reason,
         "headers": headers,
         "set_cookies": cookies,
         "body_bytes": min(len(body), limit),
-        "body_sha256": hashlib.sha256(body[:limit]).hexdigest(),
+        "body_sha256": hashlib.sha256(bytes(body[:limit])).hexdigest(),
         "body_truncated": len(body) > limit,
     }
+    if capture_text:
+        # Analyzed in memory only (security.txt); _stored_probe strips it before persistence.
+        result["body_text"] = bytes(body[:limit]).decode("utf-8", "replace")
+    generator = _generator_from_body(bytes(body[:limit]))
+    if generator:
+        # Disclosed software metadata, the same class as the Server header.
+        result["generator"] = generator
+    return result
 
 
 def _certificate_name(value) -> str:
@@ -122,9 +171,22 @@ def _certificate_name(value) -> str:
     return ", ".join(parts)
 
 
-def probe_https(name: str, addresses: list[str], verify_certificate: bool = True) -> dict:
+def probe_https(
+    name: str,
+    addresses: list[str],
+    verify_certificate: bool = True,
+    deadline: float | None = None,
+    path: str = "/",
+    capture_text: bool = False,
+) -> dict:
+    # One total budget per probe: connect, TLS, headers, and body together.
+    if deadline is None:
+        deadline = time.monotonic() + current_app.config["DOMAIN_CONNECT_TIMEOUT"] * 4
     errors = []
     for address in addresses[:4]:
+        if time.monotonic() >= deadline:
+            errors.append(f"{address}: probe time budget exceeded")
+            break
         try:
             context = ssl.create_default_context()
             if not verify_certificate:
@@ -136,14 +198,15 @@ def probe_https(name: str, addresses: list[str], verify_certificate: bool = True
                 ) as raw,
                 context.wrap_socket(raw, server_hostname=name) as secured,
             ):
-                certificate = secured.getpeercert()
-                result = _http_response(secured, name)
+                certificate = secured.getpeercert() or {}
+                cipher_info = secured.cipher()
+                result = _http_response(secured, name, deadline, path, capture_text)
                 result.update(
                     {
                         "ok": True,
                         "address": address,
                         "tls_version": secured.version() or "",
-                        "cipher": secured.cipher()[0] if secured.cipher() else "",
+                        "cipher": cipher_info[0] if cipher_info else "",
                         "certificate_subject": _certificate_name(certificate.get("subject")),
                         "certificate_issuer": _certificate_name(certificate.get("issuer")),
                         "certificate_expires": certificate.get("notAfter", ""),
@@ -156,14 +219,25 @@ def probe_https(name: str, addresses: list[str], verify_certificate: bool = True
     return {"ok": False, "error": "; ".join(errors[:2]) or "HTTPS connection failed"}
 
 
-def probe_http(name: str, addresses: list[str]) -> dict:
+def probe_http(
+    name: str,
+    addresses: list[str],
+    deadline: float | None = None,
+    path: str = "/",
+    capture_text: bool = False,
+) -> dict:
+    if deadline is None:
+        deadline = time.monotonic() + current_app.config["DOMAIN_CONNECT_TIMEOUT"] * 4
     errors = []
     for address in addresses[:4]:
+        if time.monotonic() >= deadline:
+            errors.append(f"{address}: probe time budget exceeded")
+            break
         try:
             with socket.create_connection(
                 (address, 80), timeout=current_app.config["DOMAIN_CONNECT_TIMEOUT"]
             ) as connection:
-                result = _http_response(connection, name)
+                result = _http_response(connection, name, deadline, path, capture_text)
                 result.update({"ok": True, "address": address})
                 return result
         except (OSError, http.client.HTTPException) as exc:
@@ -172,17 +246,33 @@ def probe_http(name: str, addresses: list[str]) -> dict:
 
 
 def _stored_probe(probe: dict) -> dict:
-    return {
+    stored = {
         **probe,
         "set_cookies": [cookie.split("=", 1)[0] for cookie in probe.get("set_cookies", [])],
     }
+    # Captured text (security.txt) is analyzed in memory and never persisted.
+    stored.pop("body_text", None)
+    return stored
+
+
+def probe_security_txt(name: str, addresses: list[str], prefer_https: bool) -> dict:
+    """One bounded GET of /.well-known/security.txt (RFC 9116), HTTPS first."""
+    if prefer_https:
+        probe = probe_https(name, addresses, path=SECURITY_TXT_PATH, capture_text=True)
+        if probe.get("ok"):
+            return probe
+    return probe_http(name, addresses, path=SECURITY_TXT_PATH, capture_text=True)
 
 
 def _replace_findings(db, domain_id: int, findings: list[dict], timestamp: str) -> list[str]:
     """Upsert findings and return the labels of high/medium ones that are new since the last scan."""
+    # Only open findings count as "already known": a resolved finding that comes
+    # back is new again and must alert, matching the CVE lifecycle.
     previous = {
         row["finding_key"]
-        for row in db.execute("SELECT finding_key FROM domain_findings WHERE domain_id=?", (domain_id,))
+        for row in db.execute(
+            "SELECT finding_key FROM domain_findings WHERE domain_id=? AND resolved_at IS NULL", (domain_id,)
+        )
     }
     for finding in findings:
         db.execute(
@@ -226,7 +316,16 @@ def scan_domain(domain_id: int) -> tuple[int, list[str]]:
         records = collect_dns(name, addresses)
         https = probe_https(name, addresses)
         http = probe_http(name, addresses)
-        provider, findings = analyze_domain(records, https, http)
+        security_txt = None
+        if https.get("ok") or http.get("ok"):
+            security_txt = probe_security_txt(name, addresses, https.get("ok", False))
+        provider, findings = analyze_domain(records, https, http, security_txt=security_txt, name=name)
+        software = domain_cves.extract_software(https, http)
+        if software:
+            try:
+                findings.extend(domain_cves.correlate_software(software))
+            except Exception as exc:  # noqa: BLE001 - CVE enrichment must never lose the edge scan.
+                current_app.logger.warning("Domain CVE correlation failed for %s: %s", name, exc)
         highest = {finding["severity"] for finding in findings}
         status = "high" if "high" in highest else "warning" if highest & {"medium", "low"} else "ok"
         new_findings = _replace_findings(db, domain_id, findings, timestamp)

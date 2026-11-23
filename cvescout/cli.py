@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sqlite3
 from importlib import resources
 from pathlib import Path
 
@@ -31,19 +33,27 @@ def register(app) -> None:
     @click.option(
         "--kind",
         required=True,
-        type=click.Choice(["network", "devices", "ports", "vulnerabilities", "domains"]),
+        type=click.Choice(["network", "devices", "ports", "vulnerabilities", "domains", "all"]),
     )
     @click.option("--device", "device_id", type=int, default=None, help="Limit port/vulnerability scan to one device id.")
     @click.option("--domain", "domain_name", default=None, help="Limit a domains scan to one hostname.")
     @click.option("--user", "username", default="cli", show_default=True, help="Name recorded in the audit log.")
     def scan(kind: str, device_id: int | None, domain_name: str | None, username: str) -> None:
         """Run one scan synchronously; suitable for cron or a systemd timer."""
+        if kind == "all":
+            if device_id is not None or domain_name:
+                raise click.UsageError("--device and --domain do not apply to --kind all")
+            _scan_all(username)
+            return
         if kind == "domains":
             _scan_domains(domain_name, username)
             return
         if domain_name:
             raise click.UsageError("--domain only applies to --kind domains")
-        status, message = jobs.run_scan_now(kind, device_id, username)
+        try:
+            status, message = jobs.run_scan_now(kind, device_id, username)
+        except jobs.JobBusy as exc:
+            raise click.ClickException(str(exc)) from exc
         if status != "completed":
             raise click.ClickException(message)
         click.echo(message)
@@ -62,8 +72,9 @@ def register(app) -> None:
         destination = Path(target)
         destination.mkdir(parents=True, exist_ok=True)
         written = []
-        for unit in sorted(resources.files("cvescout").joinpath("units").iterdir()):
-            if unit.suffix not in {".service", ".timer"}:
+        units = resources.files("cvescout").joinpath("units")
+        for unit in sorted(units.iterdir(), key=lambda item: item.name):
+            if not unit.name.endswith((".service", ".timer")):
                 continue
             text = unit.read_text()
             for placeholder, value in values.items():
@@ -95,6 +106,37 @@ def register(app) -> None:
         removed = db.prune_history(keep)
         click.echo(f"Removed {removed} history rows older than {keep} days")
 
+    @app.cli.command("backup")
+    @click.option(
+        "--dest",
+        required=True,
+        type=click.Path(file_okay=False, path_type=Path),
+        help="Directory to write cvescout.sqlite3 and secret_key into.",
+    )
+    def backup(dest: Path) -> None:
+        """Back up the database online (WAL-safe) plus the session secret."""
+        created = not dest.exists()
+        dest.mkdir(parents=True, exist_ok=True)
+        if created:
+            dest.chmod(0o700)
+        target = dest / "cvescout.sqlite3"
+        source = sqlite3.connect(current_app.config["DATABASE"])
+        try:
+            backup_conn = sqlite3.connect(target)
+            try:
+                source.backup(backup_conn)
+            finally:
+                backup_conn.close()
+        finally:
+            source.close()
+        target.chmod(0o600)
+        secret = Path(os.getenv("CVESCOUT_SECRET_FILE", Path(current_app.instance_path) / "secret_key"))
+        if secret.exists():
+            secret_target = dest / "secret_key"
+            secret_target.write_bytes(secret.read_bytes())
+            secret_target.chmod(0o600)
+        click.echo(f"Backup written to {dest}")
+
 
 def _scan_domains(domain_name: str | None, username: str) -> None:
     database = db.get_db()
@@ -108,9 +150,39 @@ def _scan_domains(domain_name: str | None, username: str) -> None:
         raise click.ClickException("No public hostnames configured")
     failures = []
     for row in rows:
-        status, message = jobs.run_scan_now("domain", None, username, domain_id=row["id"])
+        try:
+            status, message = jobs.run_scan_now("domain", None, username, domain_id=row["id"])
+        except jobs.JobBusy as exc:
+            click.echo(f"{row['name']}: {exc}")
+            failures.append(row["name"])
+            continue
         click.echo(message)
         if status != "completed":
             failures.append(row["name"])
     if failures:
         raise click.ClickException(f"Domain scan failed for: {', '.join(failures)}")
+
+
+def _scan_all(username: str) -> None:
+    """Run the full pipeline in order; keep going past a failed stage, report at the end."""
+    failures = []
+    for kind in ("network", "devices", "ports", "vulnerabilities"):
+        try:
+            status, message = jobs.run_scan_now(kind, None, username)
+        except jobs.JobBusy as exc:
+            click.echo(f"{kind}: {exc}")
+            failures.append(kind)
+            continue
+        click.echo(message)
+        if status != "completed":
+            failures.append(kind)
+    if db.get_db().execute("SELECT 1 FROM domains LIMIT 1").fetchone():
+        try:
+            _scan_domains(None, username)
+        except click.ClickException as exc:
+            click.echo(f"domains: {exc.message}")
+            failures.append("domains")
+    else:
+        click.echo("No public hostnames configured; skipped domain scans")
+    if failures:
+        raise click.ClickException(f"Scan pipeline failed for: {', '.join(failures)}")

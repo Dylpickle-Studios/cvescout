@@ -15,16 +15,26 @@ VULN_SELECT = (
     "COALESCE(i.kev,0) AS kev,i.epss AS epss,"
     "(SELECT result FROM checks c WHERE c.vulnerability_id=v.id ORDER BY c.id DESC LIMIT 1) AS check_result "
     "FROM vulnerabilities v JOIN ports p ON p.id=v.port_id JOIN devices d ON d.id=p.device_id "
-    "LEFT JOIN exploit_intel i ON i.cve_id=v.cve_id WHERE v.resolved_at IS NULL "
+    "LEFT JOIN exploit_intel i ON i.cve_id=v.cve_id WHERE v.resolved_at IS NULL {ack_filter}"
     "ORDER BY COALESCE(i.kev,0) DESC,COALESCE(i.epss,0) DESC,COALESCE(v.score,0) DESC,v.cve_id"
 )
 
 
+def _ack_filter(include_acknowledged: bool) -> str:
+    return "" if include_acknowledged else "AND v.acknowledged_at IS NULL "
+
+
+def _include_acknowledged() -> bool:
+    return request.args.get("acknowledged") == "1"
+
+
 @bp.get("/reports")
 def reports():
-    total = get_db().execute("SELECT COUNT(*) FROM vulnerabilities WHERE resolved_at IS NULL").fetchone()[0]
+    include_acknowledged = _include_acknowledged()
+    where = "WHERE resolved_at IS NULL" + ("" if include_acknowledged else " AND acknowledged_at IS NULL")
+    total = get_db().execute(f"SELECT COUNT(*) FROM vulnerabilities {where}").fetchone()[0]
     page, pages, offset = paginate(total)
-    severity, vulnerabilities, domain_findings, checks, domain_checks = _report_rows(PAGE_SIZE, offset)
+    severity, vulnerabilities, domain_findings, checks, domain_checks = _report_rows(PAGE_SIZE, offset, include_acknowledged)
     return render_template(
         "reports.html",
         severity=severity,
@@ -36,15 +46,18 @@ def reports():
         pages=pages,
         total=total,
         page_size=PAGE_SIZE,
+        include_acknowledged=include_acknowledged,
     )
 
-def _report_rows(limit: int | None = None, offset: int = 0):
+def _report_rows(limit: int | None = None, offset: int = 0, include_acknowledged: bool = False):
     db = get_db()
+    ack_where = "" if include_acknowledged else " AND acknowledged_at IS NULL"
     severity = db.execute(
-        "SELECT severity,COUNT(*) AS count FROM vulnerabilities WHERE resolved_at IS NULL "
-        "GROUP BY severity ORDER BY count DESC"
+        "SELECT severity,COUNT(*) AS count FROM vulnerabilities WHERE resolved_at IS NULL"
+        + ack_where
+        + " GROUP BY severity ORDER BY count DESC"
     ).fetchall()
-    sql = VULN_SELECT + (" LIMIT ? OFFSET ?" if limit else "")
+    sql = VULN_SELECT.format(ack_filter=_ack_filter(include_acknowledged)) + (" LIMIT ? OFFSET ?" if limit else "")
     vulnerabilities = db.execute(sql, (limit, offset) if limit else ()).fetchall()
     checks = db.execute(
         "SELECT c.*,v.cve_id,d.address,p.port FROM checks c JOIN vulnerabilities v ON v.id=c.vulnerability_id "
@@ -52,8 +65,9 @@ def _report_rows(limit: int | None = None, offset: int = 0):
     ).fetchall()
     domain_findings = db.execute(
         "SELECT f.*,d.id AS domain_id,d.name,d.provider FROM domain_findings f "
-        "JOIN domains d ON d.id=f.domain_id WHERE f.severity!='info' AND f.resolved_at IS NULL ORDER BY "
-        "CASE f.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,d.name,f.title"
+        "JOIN domains d ON d.id=f.domain_id WHERE f.severity!='info' AND f.resolved_at IS NULL"
+        + ("" if include_acknowledged else " AND f.acknowledged_at IS NULL")
+        + " ORDER BY CASE f.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,d.name,f.title"
     ).fetchall()
     domain_checks = db.execute(
         "SELECT c.*,d.id AS domain_id,d.name FROM domain_checks c "
@@ -61,9 +75,11 @@ def _report_rows(limit: int | None = None, offset: int = 0):
     ).fetchall()
     return severity, vulnerabilities, domain_findings, checks, domain_checks
 
-def _report_findings() -> list[dict]:
+def _report_findings(include_acknowledged: bool = False) -> list[dict]:
     """One flat list of every current finding, shared by the CSV and JSON exports."""
-    _severity, vulnerabilities, domain_findings, _checks, _domain_checks = _report_rows()
+    _severity, vulnerabilities, domain_findings, _checks, _domain_checks = _report_rows(
+        include_acknowledged=include_acknowledged
+    )
     rows = [
         {
             "type": "cve",
@@ -110,17 +126,17 @@ def _report_findings() -> list[dict]:
 
 @bp.get("/reports.csv")
 def reports_csv():
-    return download(exporters.to_csv(_report_findings()), "text/csv", "reports.csv")
+    return download(exporters.to_csv(_report_findings(_include_acknowledged())), "text/csv", "reports.csv")
 
 
 @bp.get("/reports.json")
 def reports_json():
-    return jsonify(exporters.to_json(_report_findings(), now()))
+    return jsonify(exporters.to_json(_report_findings(_include_acknowledged()), now()))
 
 
 @bp.get("/reports.sarif")
 def reports_sarif():
-    document = exporters.to_sarif(_report_findings(), __version__, now())
+    document = exporters.to_sarif(_report_findings(_include_acknowledged()), __version__, now())
     return download(exporters.dumps(document), "application/sarif+json", "reports.sarif")
 
 @bp.get("/logs")

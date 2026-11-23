@@ -16,11 +16,15 @@ from flask import (
     session,
     url_for,
 )
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db, log_event
 
 bp = Blueprint("auth", __name__)
+
+# Compared against when the username does not exist, so a missing user costs the
+# same time as a wrong password and response timing cannot enumerate usernames.
+_DUMMY_HASH = generate_password_hash("cvescout-login-timing-equalizer")
 
 # shortcut: throttle state is per process, so it resets on restart and does not cover multiple workers.
 # Upgrade to a shared store only if the app stops running as one process.
@@ -77,6 +81,10 @@ def safe_next(value: str | None) -> str | None:
     """Only allow same-site redirects, never an absolute URL."""
     if not value or not value.startswith("/") or value.startswith("//"):
         return None
+    # Browsers treat "\" as "/" and strip tab/newline inside URLs, so "/\host"
+    # or "/<tab>/host" would otherwise become a protocol-relative offsite redirect.
+    if "\\" in value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return None
     return value
 
 
@@ -101,7 +109,12 @@ def login():
             flash("Too many failed attempts. Try again later.", "error")
             return render_template("login.html"), 429
         user = get_db().execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-        if not user or not check_password_hash(user["password_hash"], password):
+        if user:
+            valid = check_password_hash(user["password_hash"], password)
+        else:
+            check_password_hash(_DUMMY_HASH, password)
+            valid = False
+        if not valid:
             log_event("warning", "login", "Failed login", username=username)
             if _record_failure(key):
                 log_event("warning", "login.rate_limited", "Login temporarily locked after repeated failures", username=username)

@@ -141,7 +141,15 @@ def scan_device_ports(device_id: int) -> int:
     if not device:
         raise ScanError("Device not found")
     address = validate_target(device["address"])
-    root = _run_nmap(["-Pn", "-sV", "--version-light", current_app.config["NMAP_TIMING"], "-p", current_app.config["PORTS"], address])
+    arguments = ["-Pn", "-sV", "--version-light", current_app.config["NMAP_TIMING"]]
+    udp_ports = current_app.config["UDP_PORTS"].strip()
+    if udp_ports:
+        # Opt-in UDP in one combined scan, e.g. -p T:22,80,U:53,161. UDP is slow
+        # unprivileged, so it stays off until CVESCOUT_UDP_PORTS lists ports.
+        arguments += ["-sU", "-p", f"T:{current_app.config['PORTS']},U:{udp_ports}"]
+    else:
+        arguments += ["-p", current_app.config["PORTS"]]
+    root = _run_nmap([*arguments, address])
     ports = _port_records(root)
     timestamp = now()
     seen = set()

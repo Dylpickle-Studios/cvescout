@@ -1,6 +1,7 @@
 {% if pages > 1 %}
 {% set view_args = dict(request.view_args or {}) %}
 {% set suffix = ('&level=' ~ level) if level else '' %}
+{% if request.args.get('acknowledged') %}{% set suffix = suffix ~ '&acknowledged=1' %}{% endif %}
 <nav class="pagination" aria-label="Pagination">
   {% if page > 1 %}
     <a class="button" href="{{ url_for(request.endpoint, page=page - 1, **view_args) }}{{ suffix }}">Previous</a>

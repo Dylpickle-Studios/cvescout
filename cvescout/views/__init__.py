@@ -9,9 +9,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from flask import Blueprint, Response, request
+from flask import Blueprint, Response, redirect, request, session, url_for
 
-from ..auth import login_required
 from ..db import get_db
 
 bp = Blueprint("main", __name__)
@@ -52,8 +51,12 @@ def download(body: str, mimetype: str, name: str) -> Response:
 
 
 @bp.before_request
-@login_required
 def require_login():
+    # Monitoring endpoints do their own access control (bearer token / open health).
+    if request.endpoint in {"main.metrics", "main.healthz"}:
+        return None
+    if not session.get("user"):
+        return redirect(url_for("auth.login", next=request.full_path))
     return None
 
 

@@ -55,7 +55,7 @@ def domains():
         "SELECT d.*,COUNT(f.id) AS finding_count,"
         "SUM(CASE WHEN f.severity='high' THEN 1 ELSE 0 END) AS high_count,"
         "SUM(CASE WHEN f.severity='medium' THEN 1 ELSE 0 END) AS medium_count "
-        "FROM domains d LEFT JOIN domain_findings f ON f.domain_id=d.id "
+        "FROM domains d LEFT JOIN domain_findings f ON f.domain_id=d.id AND f.resolved_at IS NULL AND f.acknowledged_at IS NULL "
         "GROUP BY d.id ORDER BY d.name"
     ).fetchall()
     return render_template("domains.html", domains=items, active_jobs=_active_jobs())
@@ -67,8 +67,12 @@ def domain(domain_id: int):
     if not item:
         return ("Domain not found", 404)
     findings = db.execute(
-        "SELECT * FROM domain_findings WHERE domain_id=? AND resolved_at IS NULL ORDER BY "
+        "SELECT * FROM domain_findings WHERE domain_id=? AND resolved_at IS NULL AND acknowledged_at IS NULL ORDER BY "
         "CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,category,title",
+        (domain_id,),
+    ).fetchall()
+    acknowledged = db.execute(
+        "SELECT * FROM domain_findings WHERE domain_id=? AND resolved_at IS NULL AND acknowledged_at IS NOT NULL ORDER BY title",
         (domain_id,),
     ).fetchall()
     summaries = {
@@ -86,15 +90,17 @@ def domain(domain_id: int):
         "domain.html",
         domain=item,
         findings=findings,
+        acknowledged=acknowledged,
         summaries=summaries,
         checks=checks,
         cloudflare_configured=bool(current_app.config["CLOUDFLARE_API_TOKEN"]),
+        active_jobs=_active_jobs(item["name"]),
     )
 
 @bp.post("/domains/<int:domain_id>/scan")
 def scan_domain(domain_id: int):
     try:
-        job_id = submit_domain_scan(current_app._get_current_object(), domain_id, session["user"])
+        job_id = submit_domain_scan(current_app._get_current_object(), domain_id, session["user"])  # type: ignore[attr-defined]
     except ValueError as exc:
         return (str(exc), 404)
     except JobBusy as exc:
@@ -109,7 +115,7 @@ def scan_all_domains():
     queued = 0
     for row in rows:
         try:
-            submit_domain_scan(current_app._get_current_object(), row["id"], session["user"])
+            submit_domain_scan(current_app._get_current_object(), row["id"], session["user"])  # type: ignore[attr-defined]
             queued += 1
         except JobBusy:
             continue
@@ -123,7 +129,7 @@ def check_domain_origin(domain_id: int):
         return redirect(url_for("main.domain", domain_id=domain_id))
     try:
         job_id, _check_id = submit_origin_check(
-            current_app._get_current_object(),
+            current_app._get_current_object(),  # type: ignore[attr-defined]
             domain_id,
             request.form.get("origin_ip", ""),
             session["user"],
@@ -141,7 +147,7 @@ def check_domain_origin(domain_id: int):
 def check_domain_cloudflare(domain_id: int):
     try:
         job_id, _check_id = submit_cloudflare_check(
-            current_app._get_current_object(), domain_id, session["user"]
+            current_app._get_current_object(), domain_id, session["user"]  # type: ignore[attr-defined]
         )
     except (CloudflareCheckError, ValueError) as exc:
         flash(str(exc), "error")
@@ -163,3 +169,37 @@ def delete_domain(domain_id: int):
     log_event("info", "domain.delete", "Public hostname removed", item["name"], session["user"])
     flash(f"Removed {item['name']}", "success")
     return redirect(url_for("main.domains"))
+
+
+@bp.post("/domain-findings/<int:finding_id>/acknowledge")
+def acknowledge_domain_finding(finding_id: int):
+    db = get_db()
+    row = db.execute("SELECT domain_id,title FROM domain_findings WHERE id=?", (finding_id,)).fetchone()
+    if not row:
+        return ("Finding not found", 404)
+    note = request.form.get("note", "").strip()[:500]
+    db.execute(
+        "UPDATE domain_findings SET acknowledged_at=?,acknowledged_by=?,acknowledge_note=? WHERE id=?",
+        (now(), session["user"], note, finding_id),
+    )
+    db.commit()
+    message = f"Acknowledged {row['title']}" + (f": {note}" if note else "")
+    log_event("info", "domain_finding.acknowledge", message, str(finding_id), session["user"])
+    flash(f"Acknowledged: {row['title']}", "success")
+    return redirect(request.referrer or url_for("main.domain", domain_id=row["domain_id"]))
+
+
+@bp.post("/domain-findings/<int:finding_id>/unacknowledge")
+def unacknowledge_domain_finding(finding_id: int):
+    db = get_db()
+    row = db.execute("SELECT domain_id,title FROM domain_findings WHERE id=?", (finding_id,)).fetchone()
+    if not row:
+        return ("Finding not found", 404)
+    db.execute(
+        "UPDATE domain_findings SET acknowledged_at=NULL,acknowledged_by='',acknowledge_note='' WHERE id=?",
+        (finding_id,),
+    )
+    db.commit()
+    log_event("info", "domain_finding.unacknowledge", f"Acknowledgment removed for {row['title']}", str(finding_id), session["user"])
+    flash(f"Acknowledgment removed for {row['title']}", "success")
+    return redirect(request.referrer or url_for("main.domain", domain_id=row["domain_id"]))

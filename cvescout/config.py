@@ -5,6 +5,7 @@ import ipaddress
 import os
 import socket
 import struct
+import time
 from pathlib import Path
 
 
@@ -54,7 +55,17 @@ def load_or_create_secret(instance_path: str) -> str:
     if path.exists():
         return path.read_text().strip()
     secret = os.urandom(32).hex()
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # Another process (web service and timer can start together) won the race.
+        # Its write may not have landed yet, so wait briefly for a non-empty file.
+        for _ in range(20):
+            existing = path.read_text().strip()
+            if existing:
+                return existing
+            time.sleep(0.05)
+        raise RuntimeError(f"Secret file {path} exists but is empty")
     with os.fdopen(fd, "w") as handle:
         handle.write(secret)
     return secret

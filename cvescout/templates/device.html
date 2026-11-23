@@ -14,7 +14,7 @@
 <thead><tr><th scope="col">Port</th><th scope="col">Service</th><th scope="col">Product</th><th scope="col">Version</th><th scope="col">CPE</th><th scope="col">CVEs</th></tr></thead>
 <tbody>{% for port in ports %}<tr><td>{{ port.port }}/{{ port.protocol }}</td><td>{{ port.service or '—' }}</td><td>{{ port.product or '—' }}</td><td>{{ port.version or port.extra_info or '—' }}</td><td><code>{{ port.cpe or '—' }}</code></td><td>{{ port.vulnerability_count }}</td></tr>{% else %}<tr><td colspan="6">No open ports recorded.</td></tr>{% endfor %}</tbody>
 </table></div></section>
-<section><h2>Matched vulnerabilities</h2><p class="muted">Matches come from service CPE/version data. They are leads, not proof. Explicit checks use only allowlisted non-destructive Nmap NSE scripts.</p>
+<section><h2>Matched vulnerabilities</h2><p class="muted">Matches come from service CPE/version data. They are leads, not proof. Explicit checks use allowlisted non-destructive NSE detectors, or a payload-free version re-verification for version-based matches.</p>
 <div class="cards">
 {% for vulnerability in vulnerabilities %}
 <article class="vulnerability">
@@ -29,15 +29,47 @@
   </p>
   <p><strong>{{ vulnerability.port }}/{{ vulnerability.protocol }}</strong> {{ vulnerability.product }} {{ vulnerability.version }}</p>
   <p>{{ vulnerability.summary }}</p>
-  {% if vulnerability.check_result %}<details><summary>Last check: {{ vulnerability.check_result }}</summary><pre>{{ vulnerability.check_details }}</pre></details>{% endif %}
+  {% if vulnerability.check_result %}<details><summary>Last check: {{ result_labels.get(vulnerability.check_result, vulnerability.check_result) }}</summary><pre>{{ vulnerability.check_details }}</pre></details>{% endif %}
+  {% set info = checks_info.get(vulnerability.cve_id) %}
+  {% set can_version = vulnerability.match_type in ['version', 'exact'] %}
   <form method="post" action="{{ url_for('main.check_vulnerability', vulnerability_id=vulnerability.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" {% if vulnerability.cve_id not in safe_checks %}disabled title="No safe checker available"{% endif %}>Check</button>
-    {% if vulnerability.cve_id not in safe_checks %}<small>No safe checker available</small>{% endif %}
+    {% if info %}
+    <button type="submit" title="{{ info.description }}">Check {{ info.title }}</button>
+    <small>{{ info.description }}</small>
+    {% elif can_version %}
+    <button type="submit" title="Re-probe the service version and re-check this CVE match. No payloads.">Re-verify version</button>
+    <small>Re-probes this port's service version and re-checks the match. No payloads; version-based confirmation, not proof of exploitability.</small>
+    {% else %}
+    <button type="submit" disabled title="No safe checker available">Check</button>
+    <small>No safe active checker. Product-only lead — confirm the installed version against the CVE's affected range.</small>
+    {% endif %}
+  </form>
+  <form method="post" action="{{ url_for('main.acknowledge_vulnerability', vulnerability_id=vulnerability.id) }}" class="ack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="note" placeholder="Reason (e.g. backported fix, accepted risk)" maxlength="500" autocomplete="off" aria-label="Acknowledgment reason">
+    <button type="submit" class="link" title="Hide from current reports and alerts; kept with your reason">Acknowledge</button>
   </form>
 </article>
 {% else %}<p>No CVE matches recorded.</p>{% endfor %}
 </div>
 {% include 'pagination.html' %}
 </section>
+{% if acknowledged %}
+<section><details><summary>Acknowledged ({{ acknowledged|length }}) — hidden from reports and alerts</summary>
+<div class="cards">
+{% for vulnerability in acknowledged %}
+<article class="vulnerability">
+  <div class="vuln-head"><h3><a href="{{ vulnerability.url }}" rel="noopener noreferrer" target="_blank">{{ vulnerability.cve_id }}</a></h3><span class="badge severity-{{ vulnerability.severity|lower }}">{{ vulnerability.severity }}</span></div>
+  <p class="muted">{{ vulnerability.port }}/{{ vulnerability.protocol }} · acknowledged by {{ vulnerability.acknowledged_by }} on {{ vulnerability.acknowledged_at }}</p>
+  {% if vulnerability.acknowledge_note %}<p>{{ vulnerability.acknowledge_note }}</p>{% endif %}
+  <form method="post" action="{{ url_for('main.unacknowledge_vulnerability', vulnerability_id=vulnerability.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">Unacknowledge</button>
+  </form>
+</article>
+{% endfor %}
+</div>
+</details></section>
+{% endif %}
 {% endblock %}

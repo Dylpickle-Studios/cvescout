@@ -10,12 +10,14 @@ from datetime import UTC, datetime, timedelta
 
 from flask import current_app
 
-from . import circl, exploit_intel
+from . import circl, exploit_intel, product_cpes
 from .db import get_db, now
 from .version import __version__
 
 _request_lock = threading.Lock()
 _last_request = 0.0
+
+NVD_PAGE_SIZE = 2000
 
 
 def normalize_cpe(value: str) -> str:
@@ -72,33 +74,54 @@ def _cached(cpe: str) -> tuple[list[dict] | None, bool]:
     return json.loads(row["payload"]), fresh
 
 
-def lookup_cpe(cpe: str) -> list[dict]:
+def _paced_fetch(request: urllib.request.Request) -> dict:
+    """One NVD request, paced process-wide. The attempt time is recorded even when
+    the request fails, so a run of 403/429 responses cannot become a retry burst."""
     global _last_request
+    delay = 0.7 if current_app.config["NVD_API_KEY"] else 6.1
+    with _request_lock:
+        wait = delay - (time.monotonic() - _last_request)
+        if wait > 0:
+            time.sleep(wait)
+        _last_request = time.monotonic()
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+
+
+def lookup_cpe(cpe: str) -> list[dict]:
     normalized = normalize_cpe(cpe)
     cached, fresh = _cached(normalized)
     if fresh:
         return cached or []
 
-    params = urllib.parse.urlencode({"cpeName": normalized, "resultsPerPage": 2000})
-    request = urllib.request.Request(
-        f"{current_app.config['NVD_API']}?{params}&isVulnerable&noRejected",
-        headers={"User-Agent": f"CVE-Scout/{__version__}", **({"apiKey": current_app.config["NVD_API_KEY"]} if current_app.config["NVD_API_KEY"] else {})},
-    )
-    delay = 0.7 if current_app.config["NVD_API_KEY"] else 6.1
+    headers = {
+        "User-Agent": f"CVE-Scout/{__version__}",
+        **({"apiKey": current_app.config["NVD_API_KEY"]} if current_app.config["NVD_API_KEY"] else {}),
+    }
+    items: list[dict] = []
+    start = 0
     try:
-        with _request_lock:
-            wait = delay - (time.monotonic() - _last_request)
-            if wait > 0:
-                time.sleep(wait)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload = json.load(response)
-            _last_request = time.monotonic()
+        while True:
+            params = urllib.parse.urlencode(
+                {"cpeName": normalized, "resultsPerPage": NVD_PAGE_SIZE, "startIndex": start}
+            )
+            request = urllib.request.Request(
+                f"{current_app.config['NVD_API']}?{params}&isVulnerable&noRejected",
+                headers=headers,
+            )
+            payload = _paced_fetch(request)
+            page = payload.get("vulnerabilities", [])
+            items.extend(page)
+            start += max(1, payload.get("resultsPerPage", NVD_PAGE_SIZE))
+            # Broad CPEs exceed one page; follow startIndex until totalResults is covered.
+            if not page or start >= payload.get("totalResults", 0):
+                break
     except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
         if cached is not None:
             return cached
         raise RuntimeError(f"NVD lookup failed for {normalized}: {exc}") from exc
 
-    results = _parse_response(payload)
+    results = _parse_response({"vulnerabilities": items})
     db = get_db()
     db.execute(
         "INSERT INTO cve_cache(cpe,payload,fetched_at) VALUES(?,?,?) "
@@ -121,9 +144,14 @@ def _port_version(port) -> str:
     return port["version"] or ""
 
 
-def _merge_sources(cpe: str, version: str, sources: list[str]) -> list[dict]:
-    """Query every enabled source for one CPE and keep the strongest claim per CVE."""
+def _merge_sources(cpe: str, version: str, sources: list[str]) -> tuple[list[dict], int]:
+    """Query every enabled source for one CPE and keep the strongest claim per CVE.
+
+    Returns (findings, failed source count) so callers can tell "no matches"
+    apart from "no answer".
+    """
     merged: dict[str, dict] = {}
+    failed = 0
     for source in sources:
         try:
             if source == "nvd":
@@ -135,12 +163,13 @@ def _merge_sources(cpe: str, version: str, sources: list[str]) -> list[dict]:
         except (RuntimeError, circl.CirclError) as exc:
             # One source being down must not lose the other one's results.
             current_app.logger.warning("CVE source %s failed for %s: %s", source, cpe, exc)
+            failed += 1
             continue
         for finding in findings:
             existing = merged.get(finding["cve_id"])
             if existing is None or _rank(finding) > _rank(existing):
                 merged[finding["cve_id"]] = finding
-    return list(merged.values())
+    return list(merged.values()), failed
 
 
 def _rank(finding: dict) -> tuple[int, int, float]:
@@ -165,9 +194,16 @@ def correlate_port(port_id: int) -> tuple[int, list[str]]:
     sources = current_app.config["CVE_SOURCES"]
     version = _port_version(port)
     cpes = [value.strip() for value in port["cpe"].splitlines() if value.strip()]
+    if not cpes:
+        # Nmap often reports product+version without a CPE; the explicit product
+        # map lets those ports still get version-based correlation.
+        cpes = product_cpes.cpes_for(port["product"], port["version"])
     found: dict[str, dict] = {}
+    failures = 0
     for cpe in cpes:
-        for vulnerability in _merge_sources(cpe, version, sources):
+        vulnerabilities, failed = _merge_sources(cpe, version, sources)
+        failures += failed
+        for vulnerability in vulnerabilities:
             existing = found.get(vulnerability["cve_id"])
             if existing is None or _rank(vulnerability) > _rank(existing):
                 found[vulnerability["cve_id"]] = vulnerability
@@ -193,7 +229,11 @@ def correlate_port(port_id: int) -> tuple[int, list[str]]:
             ),
         )
     # Findings that vanished are resolved, not deleted, so a report can show what changed.
-    if found:
+    # A failed source is not evidence of absence: when any query for this port errored,
+    # keep the stored findings instead of letting an outage resolve everything.
+    if failures:
+        current_app.logger.warning("CVE sources failed for port %s; existing findings kept", port_id)
+    elif found:
         placeholders = ",".join("?" for _ in found)
         db.execute(
             f"UPDATE vulnerabilities SET resolved_at=? WHERE port_id=? AND resolved_at IS NULL "

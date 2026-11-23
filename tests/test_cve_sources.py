@@ -88,8 +88,9 @@ class MergeTests(unittest.TestCase):
             {"cve_id": "CVE-2024-0002", "source": "CIRCL", "severity": "CRITICAL", "score": 9.8, "summary": "circl", "url": "u", "match_type": "version"},
         ]
         with self.app.app_context():
-            merged = cve._merge_sources("cpe:2.3:a:nginx:nginx:1.20.1", "1.20.1", ["nvd", "circl"])
+            merged, failed = cve._merge_sources("cpe:2.3:a:nginx:nginx:1.20.1", "1.20.1", ["nvd", "circl"])
         by_id = {item["cve_id"]: item for item in merged}
+        self.assertEqual(failed, 0)
         self.assertEqual(by_id["CVE-2024-0001"]["match_type"], "exact")
         self.assertEqual(by_id["CVE-2024-0002"]["match_type"], "version")
 
@@ -100,7 +101,8 @@ class MergeTests(unittest.TestCase):
             {"cve_id": "CVE-2024-0003", "source": "NVD", "severity": "HIGH", "score": 7.0, "summary": "nvd", "url": "u"}
         ]
         with self.app.app_context():
-            merged = cve._merge_sources("cpe:2.3:a:nginx:nginx:1.20.1", "1.20.1", ["nvd", "circl"])
+            merged, failed = cve._merge_sources("cpe:2.3:a:nginx:nginx:1.20.1", "1.20.1", ["nvd", "circl"])
+        self.assertEqual(failed, 1)
         self.assertEqual([item["cve_id"] for item in merged], ["CVE-2024-0003"])
 
     @patch("cvescout.circl.lookup_cpe")
