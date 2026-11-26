@@ -26,7 +26,7 @@ classifiers = [
 dependencies = ["dnspython>=2.6,<3", "Flask>=3.0,<4", "gunicorn>=21,<24"]
 
 [project.optional-dependencies]
-dev = ["build>=1,<2", "coverage>=7,<8", "mypy>=1.11,<2", "ruff>=0.8,<1"]
+dev = ["build>=1,<2", "coverage>=7,<8", "mypy>=1.11,<3", "ruff>=0.8,<1"]
 
 [project.urls]
 Homepage = "https://github.com/Dylpickle-Studios/cvescout"
